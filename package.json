@@ -15,7 +15,8 @@
     "pinia": "^4.0.2",
     "tdesign-mobile-vue": "^1.16.1",
     "vue": "rc",
-    "vue-router": "^5.2.0"
+    "vue-router": "^5.2.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tsconfig/node24": "^24.0.4",

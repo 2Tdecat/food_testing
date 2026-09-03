@@ -17,12 +17,20 @@ export interface ToolItem {
 
 export const tools: ToolItem[] = [
   {
-    id: 'sugar',
-    name: '糖分计算',
-    description: '蔗糖分（二次旋光法）与还原糖分（兰-艾农恒容法）合并计算',
-    path: '/tools/sugar',
-    icon: 'calculator',
-    keywords: ['糖分', '蔗糖分', '还原糖', '旋光', '绵白糖', '红糖', '赤砂糖', '斐林'],
+    id: 'sugar-sucrose',
+    name: '绵白糖蔗糖分-5012',
+    description: '蔗糖分测定（二次旋光法），含历史记录与 Excel 导出',
+    path: '/tools/sugar-sucrose',
+    icon: 'chart-line-data',
+    keywords: ['绵白糖', '蔗糖分', '旋光', '5012', '糖分'],
+  },
+  {
+    id: 'sugar-reducing',
+    name: '红糖还原糖',
+    description: '还原糖分测定（兰-艾农恒容法），含历史记录与 Excel 导出',
+    path: '/tools/sugar-reducing',
+    icon: 'chart-pie',
+    keywords: ['红糖', '还原糖', '斐林', '兰艾农', '糖分'],
   },
 ]
 

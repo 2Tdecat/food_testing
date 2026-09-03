@@ -9,9 +9,28 @@ const router = createRouter({
       component: () => import('../views/HomeView.vue'),
     },
     {
-      path: '/tools/sugar',
-      name: 'sugar',
-      component: () => import('../views/SugarCalcView.vue'),
+      // 绵白糖蔗糖分-5012 独立计算
+      path: '/tools/sugar-sucrose',
+      name: 'sugar-sucrose',
+      component: () => import('../views/SucroseCalcView.vue'),
+    },
+    {
+      // 红糖还原糖独立计算
+      path: '/tools/sugar-reducing',
+      name: 'sugar-reducing',
+      component: () => import('../views/ReducingCalcView.vue'),
+    },
+    {
+      // 历史记录列表（type: sucrose | reducing）
+      path: '/tools/history/:type',
+      name: 'history',
+      component: () => import('../views/HistoryView.vue'),
+    },
+    {
+      // 历史记录明细/编辑（type: sucrose | reducing）
+      path: '/tools/history/:type/:id',
+      name: 'history-detail',
+      component: () => import('../views/HistoryDetailView.vue'),
     },
   ],
   scrollBehavior(to, from, savedPosition) {

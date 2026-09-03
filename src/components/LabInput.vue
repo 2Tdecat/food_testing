@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { ValidationRule, CheckResult } from '@/utils/sugarCalc'
 import { validateValue } from '@/utils/sugarCalc'
 
@@ -15,18 +15,46 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: number | null): void
 }>()
 
-const textValue = computed<string>({
-  get: () => (props.modelValue === null ? '' : String(props.modelValue)),
-  set: (val: string) => {
-    const trimmed = val.trim()
-    if (trimmed === '') {
-      emit('update:modelValue', null)
-      return
+/**
+ * 输入框显示的原始文本。
+ * 聚焦期间保留原始输入（如 "1."、"1.0"），不做数字回填格式化，
+ * 避免 Number() 往返导致小数点/末尾 0 被吞掉；仅失焦时规范化显示。
+ */
+const text = ref('')
+const focused = ref(false)
+
+// 非聚焦状态下，外部值变化（如自动填充、重置）时同步到显示文本
+watch(
+  () => props.modelValue,
+  (v) => {
+    if (!focused.value) {
+      text.value = v === null ? '' : String(v)
     }
-    const num = Number(trimmed)
-    emit('update:modelValue', Number.isNaN(num) ? null : num)
   },
+  { immediate: true },
+)
+
+// 原始文本变化时解析并向外 emit 数值
+watch(text, (val) => {
+  const trimmed = val.trim()
+  if (trimmed === '' || trimmed === '-' || trimmed === '.' || trimmed === '-.') {
+    emit('update:modelValue', null)
+    return
+  }
+  const num = Number(trimmed)
+  emit('update:modelValue', Number.isNaN(num) ? null : num)
 })
+
+function onFocus() {
+  focused.value = true
+}
+
+function onBlur() {
+  focused.value = false
+  // 失焦后按最终数值规范化显示（去掉无意义的 "1." 等）
+  const v = props.modelValue
+  text.value = v === null ? '' : String(v)
+}
 
 const check = computed<CheckResult | undefined>(() =>
   props.rule ? validateValue(props.modelValue, props.rule) : undefined,
@@ -40,13 +68,15 @@ const levelClass = computed(() =>
 <template>
   <div class="lab-input" :class="levelClass">
     <t-input
-      v-model="textValue"
+      v-model="text"
       :label="label"
       :placeholder="placeholder ?? '请输入数值'"
       type="number"
       layout="vertical"
       align="right"
       :suffix="suffix"
+      @focus="onFocus"
+      @blur="onBlur"
     />
     <div v-if="check" class="lab-input__tips">{{ check.message }}</div>
   </div>
