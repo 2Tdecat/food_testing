@@ -1,0 +1,30 @@
+/* 全局移动端基础样式 */
+:root {
+  --lab-primary: #0052d9;
+  --lab-success: #2ba471;
+  --lab-warning: #e37318;
+  --lab-danger: #d54941;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue',
+    'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background-color: #f3f3f3;
+}
+
+/* 页面在宽屏上居中显示，模拟手机布局 */
+.page {
+  max-width: 480px;
+  min-height: 100vh;
+  margin: 0 auto;
+  background: #f3f3f3;
+  padding-bottom: 24px;
+}
