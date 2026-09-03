@@ -7,7 +7,7 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 // https://vite.dev/config/
 export default defineConfig({
   // 相对路径，支持构建后直接以 file:// 打开 html 使用
-  base: '/food_testing/',
+  base: './',
   plugins: [
     vue(),
     vueDevTools(),
