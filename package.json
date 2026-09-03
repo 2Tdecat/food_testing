@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
-    "format": "oxfmt src/"
+    "format": "oxfmt src/",
+    "deploy": "gh-pages -d dist --no-history"
   },
   "dependencies": {
     "pinia": "^4.0.2",
@@ -22,6 +23,7 @@
     "@types/node": "^24.13.3",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/tsconfig": "^0.9.1",
+    "gh-pages": "^6.3.0",
     "npm-run-all2": "^9.0.2",
     "oxfmt": "^0.59.0",
     "typescript": "~6.0.0",
