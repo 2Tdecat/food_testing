@@ -40,7 +40,7 @@ function resetAll() {
 
 <template>
   <div class="page">
-    <t-navbar title="绵白糖蔗糖分-5012" fixed placeholder @left-click="router.back()">
+    <t-navbar title="绵白糖红糖蔗糖分" fixed placeholder @left-click="router.back()">
       <template #left>
         <t-icon name="chevron-left" size="24px" />
       </template>

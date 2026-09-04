@@ -18,11 +18,11 @@ export interface ToolItem {
 export const tools: ToolItem[] = [
   {
     id: 'sugar-sucrose',
-    name: '绵白糖蔗糖分-5012',
+    name: '绵白糖红糖蔗糖分',
     description: '蔗糖分测定（二次旋光法），含历史记录与 Excel 导出',
     path: '/tools/sugar-sucrose',
     icon: 'chart-line-data',
-    keywords: ['绵白糖', '蔗糖分', '旋光', '5012', '糖分'],
+    keywords: ['绵白糖', '红糖', '蔗糖分', '旋光', '5012', '糖分'],
   },
   {
     id: 'sugar-reducing',

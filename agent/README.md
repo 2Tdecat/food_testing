@@ -1,0 +1,65 @@
+# 实验室工具 — 项目文档入口
+
+食品检测实验室的计算工具 App（移动端本地使用），将实验室 Excel 计算流程（蔗糖分、还原糖分测定等）迁移为带输入校验、自动计算、历史管理与 Excel 导出的 Web 应用。
+
+## 项目背景
+
+实验员日常使用 Excel 做实验计算，存在四大痛点：操作繁琐（多表切换、重复填写通用变量）、容易出错（无值校验）、数据难管理、手机操作不便。本项目将计算标准化为工具页面，按 QB/T 8040-2024《赤砂糖试验方法》实现计算与校验。详见 [项目需求.md](./项目需求.md)。
+
+## 技术栈
+
+- Vue 3 + TypeScript + Vite（rolldown 构建）
+- UI：tdesign-mobile-vue（移动端样式）
+- 路由：vue-router（hash 模式，支持直接打开 html 文件）
+- 状态：pinia
+- Excel 导出：xlsx（结果列写入公式，修改变量自动重算）
+- 本地存储：localStorage（历史记录持久化）
+
+## 文档索引
+
+| 文档 | 说明 |
+|---|---|
+| [项目需求.md](./项目需求.md) | 初始需求：项目背景、技术约束、UI 要求 |
+| [requirement1.md](./requirement1.md) | 第一轮需求变更：平行样 2 自动生成、历史记录批量管理等 |
+| [requirement1_progress.md](./requirement1_progress.md) | requirement1 实现进度与验证记录 |
+| [项目进度.md](./项目进度.md) | 项目整体进度（待维护） |
+| [excels/](./excels/) | 原始参考资料，见下节 |
+
+## 参考资料（excels/）
+
+- `副本过氧化氢，糖8.12.xlsx8.20.xlsx` — 实验室现有 Excel 计算表（"绵白糖蔗糖分-5012"、"红糖还原糖"两表），导出格式的对齐基准
+- `赤砂糖试验方法.md` — QB/T 8040-2024 标准全文（Markdown 版），计算公式与变量校验规则的依据
+- `QBT8040-2024.pdf` — 标准原件
+
+## 当前功能
+
+- **绵白糖红糖蔗糖分**：二次旋光法（标准第 5 章），平行样 2 自动生成
+- **红糖还原糖**：兰-艾农恒容法（标准第 6 章），滴定体积取一次，平行样 2 自动生成
+- **历史记录**：按日期分组（默认展开今天）、单选/多选/全选/按日期勾选、批量删除导出、明细查看与修改
+- **Excel 导出**：列布局与原 Excel 一致，结果列带公式（修改变量自动重算）
+
+## 开发规范（要点）
+
+1. **计算与校验单一数据源**：所有计算公式、变量校验规则（`RULE_*` 常量）、平行样生成逻辑集中在 `src/utils/sugarCalc.ts`，面板组件 import 引用，禁止在组件内重复定义规则。
+2. **导出格式对齐原 Excel**：`src/utils/exportExcel.ts` 的列布局、表名、文件名以 `agent/excels/` 中的原 Excel 为准；结果列必须写入公式。
+3. **移动端 UI**：统一使用 tdesign-mobile-vue 组件；输入组件用 `src/components/LabInput.vue`（支持小数输入、校验提示、readonly）。
+4. **历史记录**：统一经 `src/utils/history.ts` 读写 localStorage；删除操作必须有确认弹窗。
+5. **验证要求**：改动后运行 `npm run type-check` 与 `npm run build`；计算逻辑变更需用 Node 脚本做数值验证（可参考 [requirement1_progress.md](./requirement1_progress.md) 的验证方式）。
+6. **代码格式**：`npm run format`（oxfmt）。
+7. 交流与代码注释使用中文。
+
+## 源码结构速览
+
+```
+src/
+├── utils/
+│   ├── sugarCalc.ts      # 核心计算、校验规则、平行样生成（单一数据源）
+│   ├── history.ts         # 历史记录 localStorage 读写
+│   └── exportExcel.ts     # Excel 导出（带公式）
+├── components/
+│   ├── LabInput.vue       # 通用输入组件（小数、校验、readonly）
+│   └── sugar/             # 蔗糖分/还原糖计算面板（复用组件）
+├── views/                 # 页面：首页、两个计算页、历史列表/明细页
+├── data/tools.ts          # 首页工具入口注册表
+└── router/                # hash 路由
+```

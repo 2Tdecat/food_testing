@@ -44,7 +44,6 @@ export interface SucroseRecord {
 export interface ReducingRunInput {
   mass: number | null
   v1: number | null
-  v2: number | null
 }
 
 export interface ReducingRecord {
@@ -109,12 +108,16 @@ export function addReducingRecord(record: Omit<ReducingRecord, 'id' | 'savedAt'>
 }
 
 export function deleteRecord(type: HistoryType, id: string): void {
+  deleteRecords(type, [id])
+}
+
+/** 批量删除记录 */
+export function deleteRecords(type: HistoryType, ids: string[]): void {
+  if (ids.length === 0) return
+  const idSet = new Set(ids)
   const list = loadHistory(type) as { id: string }[]
-  const idx = list.findIndex((r) => r.id === id)
-  if (idx >= 0) {
-    list.splice(idx, 1)
-    persist(type, list)
-  }
+  const rest = list.filter((r) => !idSet.has(r.id))
+  if (rest.length !== list.length) persist(type, rest)
 }
 
 /** 按 id 查找记录 */
@@ -159,6 +162,14 @@ export function clearHistory(type: HistoryType): void {
 export function formatDate(iso: string): string {
   const d = new Date(iso)
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
+}
+
+/** 保存时间格式化为 YYYY-MM-DD（历史列表按日期分组用） */
+export function formatDateKey(iso: string): string {
+  const d = new Date(iso)
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${mm}-${dd}`
 }
 
 /** 保存时间格式化为 YYYY/M/D HH:mm */

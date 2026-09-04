@@ -1,8 +1,15 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import LabInput from '@/components/LabInput.vue'
-import type { ValidationRule } from '@/utils/sugarCalc'
-import { calcSucrose, duplicateStats } from '@/utils/sugarCalc'
+import {
+  calcSucrose,
+  duplicateStats,
+  genSucroseRun2,
+  RULE_LOSS as ruleLoss,
+  RULE_POLAR as rulePolar,
+  RULE_SUC_MASS as ruleSucMass,
+  RULE_TEMP as ruleTemp,
+} from '@/utils/sugarCalc'
 
 /** 初始数据（历史记录编辑时回填） */
 export interface SucroseInitial {
@@ -25,31 +32,6 @@ function nn(v: number | null | undefined): number | null {
   return v === null || v === undefined || Number.isNaN(v) ? null : v
 }
 
-/* ---------------- 变量校验规则（依据 QB/T 8040-2024） ---------------- */
-
-/** 称样量 65.000g±0.002（标准 5.4.2） */
-const ruleSucMass: ValidationRule = {
-  min: 64.5,
-  max: 65.5,
-  warnMin: 64.998,
-  warnMax: 65.002,
-  message: '称样量应约 65g',
-  warnMessage: '标准规定称样量 65.000g±0.002g',
-}
-/** 检糖计测量范围 −30°Z~+120°Z（标准 5.2.1） */
-const rulePolar: ValidationRule = { min: -30, max: 120, message: '检糖计测量范围 −30°Z~+120°Z' }
-/** 干燥失重 */
-const ruleLoss: ValidationRule = { min: 0, max: 15, message: '干燥失重应在 0~15 g/100g 之间' }
-/** 糖液温度 */
-const ruleTemp: ValidationRule = {
-  min: 10,
-  max: 35,
-  warnMin: 18,
-  warnMax: 25,
-  message: '温度应在 10~35 ℃ 之间',
-  warnMessage: '温度偏离 20℃ 较大，注意温度校正',
-}
-
 /* ---------------- 输入 ---------------- */
 
 const shared = reactive({ loss: null as number | null, temp: null as number | null })
@@ -64,26 +46,60 @@ const run2 = reactive({
   invertP: null as number | null,
 })
 
+/* ---------------- 平行样 2 自动生成 ---------------- */
+
+/** 程序化回填期间不触发自动生成 */
+const suppressGen = ref(false)
+
+/** 依据平行样 1（及共享变量）生成平行样 2 数据 */
+function genRun2() {
+  const g = genSucroseRun2(
+    { mass: run1.mass, directP: run1.directP, invertP: run1.invertP },
+    { loss: shared.loss, temp: shared.temp },
+  )
+  Object.assign(
+    run2,
+    g ?? { mass: null, directP: null, invertP: null },
+  )
+}
+
+/* 平行样 1 / 共享变量变化时自动生成平行样 2（结果误差 < 0.05%） */
+watch(
+  () => [run1.mass, run1.directP, run1.invertP, shared.loss, shared.temp],
+  () => {
+    if (suppressGen.value) return
+    genRun2()
+  },
+)
+
 /* 历史记录编辑时回填初始数据 */
 watch(
   () => props.initial,
   (init) => {
-    if (!init) return
-    shared.loss = nn(init.loss)
-    shared.temp = nn(init.temp)
-    Object.assign(run1, {
-      mass: nn(init.runs[0]?.mass),
-      directP: nn(init.runs[0]?.directP),
-      invertP: nn(init.runs[0]?.invertP),
-    })
-    Object.assign(run2, {
-      mass: nn(init.runs[1]?.mass),
-      directP: nn(init.runs[1]?.directP),
-      invertP: nn(init.runs[1]?.invertP),
-    })
+    if (init) applyInitial(init)
   },
   { immediate: true },
 )
+
+function applyInitial(init: NonNullable<SucroseInitial>) {
+  // 回填期间屏蔽自动生成，避免覆盖历史数据
+  suppressGen.value = true
+  shared.loss = nn(init.loss)
+  shared.temp = nn(init.temp)
+  Object.assign(run1, {
+    mass: nn(init.runs[0]?.mass),
+    directP: nn(init.runs[0]?.directP),
+    invertP: nn(init.runs[0]?.invertP),
+  })
+  Object.assign(run2, {
+    mass: nn(init.runs[1]?.mass),
+    directP: nn(init.runs[1]?.directP),
+    invertP: nn(init.runs[1]?.invertP),
+  })
+  nextTick(() => {
+    suppressGen.value = false
+  })
+}
 
 /* ---------------- 计算 ---------------- */
 
@@ -153,20 +169,9 @@ defineExpose({
     Object.assign(run2, { mass: null, directP: null, invertP: null })
   },
   /** 用给定数据回填（NaN 视为空） */
-  load: (init: NonNullable<SucroseInitial>) => {
-    shared.loss = nn(init.loss)
-    shared.temp = nn(init.temp)
-    Object.assign(run1, {
-      mass: nn(init.runs[0]?.mass),
-      directP: nn(init.runs[0]?.directP),
-      invertP: nn(init.runs[0]?.invertP),
-    })
-    Object.assign(run2, {
-      mass: nn(init.runs[1]?.mass),
-      directP: nn(init.runs[1]?.directP),
-      invertP: nn(init.runs[1]?.invertP),
-    })
-  },
+  load: (init: NonNullable<SucroseInitial>) => applyInitial(init),
+  /** 依据当前平行样 1 重新生成平行样 2 */
+  regenerate: genRun2,
   /** 数据是否完整可保存 */
   isComplete: computed(
     () =>
@@ -213,10 +218,14 @@ defineExpose({
       <LabInput v-model="run1.directP" label="直接旋光读数 P₁" suffix="°Z" placeholder="如 46.54" :rule="rulePolar" />
       <LabInput v-model="run1.invertP" label="转化旋光读数 P₁′" suffix="°Z" placeholder="如 -15.63" :rule="rulePolar" />
 
-      <div class="group-label">平行样 2</div>
-      <LabInput v-model="run2.mass" label="称样质量 m₂" suffix="g" placeholder="如 65.0012" :rule="ruleSucMass" />
-      <LabInput v-model="run2.directP" label="直接旋光读数 P₂" suffix="°Z" placeholder="如 46.68" :rule="rulePolar" />
-      <LabInput v-model="run2.invertP" label="转化旋光读数 P₂′" suffix="°Z" placeholder="如 -15.46" :rule="rulePolar" />
+      <div class="group-label">
+        平行样 2
+        <t-tag theme="primary" size="small" variant="light" class="auto-tag">由平行样 1 自动生成</t-tag>
+        <span class="regen" @click="genRun2">重新生成</span>
+      </div>
+      <LabInput v-model="run2.mass" label="称样质量 m₂" suffix="g" placeholder="填写平行样 1 后自动生成" :rule="ruleSucMass" readonly />
+      <LabInput v-model="run2.directP" label="直接旋光读数 P₂" suffix="°Z" placeholder="自动生成" :rule="rulePolar" readonly />
+      <LabInput v-model="run2.invertP" label="转化旋光读数 P₂′" suffix="°Z" placeholder="自动生成" :rule="rulePolar" readonly />
     </t-cell-group>
 
     <!-- 公式与结果 -->
@@ -296,6 +305,19 @@ defineExpose({
   font-size: 13px;
   font-weight: 600;
   color: var(--td-text-color-secondary, rgba(0, 0, 0, 0.55));
+}
+
+.auto-tag {
+  font-weight: 400;
+}
+
+.regen {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--lab-primary, #0052d9);
+  text-decoration: underline;
+  padding: 4px;
 }
 
 .formula-card {

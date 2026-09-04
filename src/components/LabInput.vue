@@ -9,6 +9,8 @@ const props = defineProps<{
   placeholder?: string
   suffix?: string
   rule?: ValidationRule
+  /** 只读（展示自动生成的数据） */
+  readonly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -66,7 +68,7 @@ const levelClass = computed(() =>
 </script>
 
 <template>
-  <div class="lab-input" :class="levelClass">
+  <div class="lab-input" :class="[levelClass, { 'lab-input--readonly': readonly }]">
     <t-input
       v-model="text"
       :label="label"
@@ -75,6 +77,7 @@ const levelClass = computed(() =>
       layout="vertical"
       align="right"
       :suffix="suffix"
+      :readonly="readonly"
       @focus="onFocus"
       @blur="onBlur"
     />
@@ -100,5 +103,10 @@ const levelClass = computed(() =>
 /* 校验不通过时输入文字变红，增强提示 */
 .lab-input--error :deep(.t-input__control) {
   color: var(--lab-danger, #d54941);
+}
+
+/* 只读展示（自动生成的数据） */
+.lab-input--readonly :deep(.t-input__control) {
+  color: var(--td-text-color-secondary, rgba(0, 0, 0, 0.55));
 }
 </style>

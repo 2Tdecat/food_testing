@@ -1,16 +1,22 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import LabInput from '@/components/LabInput.vue'
-import type { ValidationRule } from '@/utils/sugarCalc'
-import { calcReducing } from '@/utils/sugarCalc'
+import {
+  calcReducing,
+  genReducingRun2,
+  RULE_K as ruleK,
+  RULE_RED_MASS as ruleRedMass,
+  RULE_SUCROSE as ruleSucrose,
+  RULE_VOLUME as ruleVolume,
+} from '@/utils/sugarCalc'
 
 /** 初始数据（历史记录编辑时回填） */
 export interface ReducingInitial {
   sucrose: number | null
   k: number | null
   runs: [
-    { mass: number | null; v1: number | null; v2: number | null },
-    { mass: number | null; v1: number | null; v2: number | null },
+    { mass: number | null; v1: number | null },
+    { mass: number | null; v1: number | null },
   ]
 }
 
@@ -26,31 +32,6 @@ const props = defineProps<{
 function nn(v: number | null | undefined): number | null {
   return v === null || v === undefined || Number.isNaN(v) ? null : v
 }
-
-/* ---------------- 变量校验规则（依据 QB/T 8040-2024） ---------------- */
-
-/** 还原糖称样量约 26g，可视含量增减（标准 6.4.1） */
-const ruleRedMass: ValidationRule = {
-  min: 0.1,
-  max: 60,
-  warnMin: 10,
-  warnMax: 45,
-  message: '称样量应在 0~60g 之间',
-  warnMessage: '标准规定称样量约 26g，可视还原糖含量高低增减',
-}
-/** 滴定管 50mL（标准 6.2.2） */
-const ruleVolume: ValidationRule = { min: 0, max: 50, message: '滴定管量程 50mL' }
-/** 费林溶液浓度校正系数 K（标准 6.3.4.2，K = 标定耗用体积/40） */
-const ruleK: ValidationRule = {
-  min: 0.5,
-  max: 2,
-  warnMin: 0.95,
-  warnMax: 1.2,
-  message: '校正系数应在 0.5~2 之间',
-  warnMessage: 'K = 标定耗用标准转化糖液体积/40，通常接近 1',
-}
-/** 蔗糖分 */
-const ruleSucrose: ValidationRule = { min: 0, max: 100, message: '蔗糖分应在 0~100 g/100g 之间' }
 
 /* ---------------- 输入 ---------------- */
 
@@ -83,13 +64,37 @@ const k = ref<number | null>(1.0525)
 const run1 = reactive({
   mass: null as number | null,
   v1: null as number | null,
-  v2: null as number | null,
 })
 const run2 = reactive({
   mass: null as number | null,
   v1: null as number | null,
-  v2: null as number | null,
 })
+
+/* ---------------- 平行样 2 自动生成 ---------------- */
+
+/** 程序化回填期间不触发自动生成 */
+const suppressGen = ref(false)
+
+/** 依据平行样 1（及共享变量）生成平行样 2 数据 */
+function genRun2() {
+  const g = genReducingRun2(
+    { mass: run1.mass, v1: run1.v1 },
+    { sucrose: sucrose.value, k: k.value },
+  )
+  Object.assign(
+    run2,
+    g ?? { mass: null, v1: null },
+  )
+}
+
+/* 平行样 1 / 共享变量变化时自动生成平行样 2（结果误差 < 15%） */
+watch(
+  () => [run1.mass, run1.v1, sucrose.value, k.value],
+  () => {
+    if (suppressGen.value) return
+    genRun2()
+  },
+)
 
 /* 历史记录编辑时回填初始数据 */
 watch(
@@ -101,6 +106,8 @@ watch(
 )
 
 function applyInitial(init: NonNullable<ReducingInitial>) {
+  // 回填期间屏蔽自动生成，避免覆盖历史数据
+  suppressGen.value = true
   // 回填蔗糖分视为手动输入（避免被 autoSucrose 观察覆盖）
   if (nn(init.sucrose) !== null) sucroseManual.value = true
   sucrose.value = nn(init.sucrose)
@@ -108,12 +115,13 @@ function applyInitial(init: NonNullable<ReducingInitial>) {
   Object.assign(run1, {
     mass: nn(init.runs[0]?.mass),
     v1: nn(init.runs[0]?.v1),
-    v2: nn(init.runs[0]?.v2),
   })
   Object.assign(run2, {
     mass: nn(init.runs[1]?.mass),
     v1: nn(init.runs[1]?.v1),
-    v2: nn(init.runs[1]?.v2),
+  })
+  nextTick(() => {
+    suppressGen.value = false
   })
 }
 
@@ -147,11 +155,11 @@ function sig(v: number | null | undefined): string {
 /* ---------------- 公式文本 ---------------- */
 
 const v1Line = computed(() =>
-  res1.value ? `V₁ = (${fmt(run1.v1)} + ${fmt(run1.v2)}) / 2 = ${fmt(res1.value.V)} mL` : 'V₁ = --',
+  res1.value ? `V₁ = ${fmt(run1.v1)} mL` : 'V₁ = --',
 )
 
 const v2Line = computed(() =>
-  res2.value ? `V₂ = (${fmt(run2.v1)} + ${fmt(run2.v2)}) / 2 = ${fmt(res2.value.V)} mL` : 'V₂ = --',
+  res2.value ? `V₂ = ${fmt(run2.v1)} mL` : 'V₂ = --',
 )
 
 const m1Line = computed(() =>
@@ -208,11 +216,13 @@ defineExpose({
     sucroseManual.value = false
     sucrose.value = props.autoSucrose ?? null
     k.value = 1.0525
-    Object.assign(run1, { mass: null, v1: null, v2: null })
-    Object.assign(run2, { mass: null, v1: null, v2: null })
+    Object.assign(run1, { mass: null, v1: null })
+    Object.assign(run2, { mass: null, v1: null })
   },
   /** 用给定数据回填（NaN 视为空） */
   load: (init: NonNullable<ReducingInitial>) => applyInitial(init),
+  /** 依据当前平行样 1 重新生成平行样 2 */
+  regenerate: genRun2,
   /** 数据是否完整可保存 */
   isComplete: computed(
     () =>
@@ -230,7 +240,7 @@ defineExpose({
     runs: [
       { ...run1 },
       { ...run2 },
-    ] as [{ mass: number; v1: number; v2: number }, { mass: number; v1: number; v2: number }],
+    ] as [{ mass: number; v1: number }, { mass: number; v1: number }],
     calc: [
       {
         V: res1.value?.V ?? Number.NaN,
@@ -290,13 +300,15 @@ defineExpose({
 
       <div class="group-label">平行样 1</div>
       <LabInput v-model="run1.mass" label="称样质量 m₁" suffix="g" placeholder="如 26.0002" :rule="ruleRedMass" />
-      <LabInput v-model="run1.v1" label="滴定体积 V₁ₐ" suffix="mL" placeholder="如 20.3" :rule="ruleVolume" />
-      <LabInput v-model="run1.v2" label="滴定体积 V₁ᵦ" suffix="mL" placeholder="如 20.1" :rule="ruleVolume" />
+      <LabInput v-model="run1.v1" label="滴定体积 V₁" suffix="mL" placeholder="如 20.3" :rule="ruleVolume" />
 
-      <div class="group-label">平行样 2</div>
-      <LabInput v-model="run2.mass" label="称样质量 m₂" suffix="g" placeholder="如 26.0055" :rule="ruleRedMass" />
-      <LabInput v-model="run2.v1" label="滴定体积 V₂ₐ" suffix="mL" placeholder="如 20" :rule="ruleVolume" />
-      <LabInput v-model="run2.v2" label="滴定体积 V₂ᵦ" suffix="mL" placeholder="如 20" :rule="ruleVolume" />
+      <div class="group-label">
+        平行样 2
+        <t-tag theme="primary" size="small" variant="light" class="auto-tag">由平行样 1 自动生成</t-tag>
+        <span class="regen" @click="genRun2">重新生成</span>
+      </div>
+      <LabInput v-model="run2.mass" label="称样质量 m₂" suffix="g" placeholder="填写平行样 1 后自动生成" :rule="ruleRedMass" readonly />
+      <LabInput v-model="run2.v1" label="滴定体积 V₂" suffix="mL" placeholder="自动生成" :rule="ruleVolume" readonly />
     </t-cell-group>
 
     <!-- 公式与结果 -->
@@ -404,6 +416,15 @@ defineExpose({
   font-size: 12px;
   color: var(--lab-primary, #0052d9);
   text-decoration: underline;
+}
+
+.regen {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--lab-primary, #0052d9);
+  text-decoration: underline;
+  padding: 4px;
 }
 
 .formula-card {
