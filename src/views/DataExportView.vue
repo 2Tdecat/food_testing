@@ -276,7 +276,8 @@ function modeLabel(r: AnyRecord): string {
   if (t === 'total-sugar') {
     const x = r as TotalSugarRecord
     const flask = x.mode === 'direct' && x.flaskVolume === 200 ? '·定200' : ''
-    return `${x.mode === 'direct' ? '正滴' : '反滴'}${flask}${x.sucroseBasis ? '·蔗糖计' : ''}`
+    const useVol = x.useVolume != null && x.useVolume !== 50 ? `·取${x.useVolume}` : ''
+    return `${x.mode === 'direct' ? '正滴' : '反滴'}${flask}${useVol}${x.sucroseBasis ? '·蔗糖计' : ''}`
   }
   if (t === 'starch') {
     const x = r as StarchRecord

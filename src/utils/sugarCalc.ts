@@ -423,6 +423,16 @@ export type TotalSugarMode = 'direct' | 'back'
 /** 总糖默认定容体积（mL），原 Excel 绝大多数数据为 250，少数为 200 */
 export const TOTAL_SUGAR_DEFAULT_FLASK = 250
 
+/** 总糖默认取用体积（mL），原 Excel 四表公式中固定为 50 */
+export const TOTAL_SUGAR_DEFAULT_USE_VOLUME = 50
+
+/** 总糖取用体积（mL）：滴定所取试样定容溶液的体积，原表公式固定为 50 */
+export const RULE_TOTAL_SUGAR_USE_VOLUME: ValidationRule = {
+  min: 1,
+  max: 250,
+  message: '取用体积应在 1~250 mL 之间',
+}
+
 /** 总糖滴定平行样输入（单个平行样） */
 export interface TotalSugarInput {
   /** 称样量 m（g） */
@@ -443,6 +453,8 @@ export interface TotalSugarSharedInput {
   dilution: number | null
   /** 定容体积（mL）：250（默认）或 200 */
   flaskVolume?: number | null
+  /** 取用体积（mL）：滴定所取试样定容溶液的体积，默认 50 */
+  useVolume?: number | null
 }
 
 /**
@@ -460,11 +472,11 @@ function excelRound(v: number, digits: number): number {
 
 /**
  * 总糖含量（g/100g），公式与实验室 Excel（糖.xlsx）四表一致：
- * - 正滴：ROUND(G量 × 100 × 稀释倍数 × 定容 × 100 / (50 × 称样量 × 滴定量 × 1000), 2)
- * - 正滴（蔗糖计）：ROUND(G量 × 100 × 稀释倍数 × 100 × 定容 / (称样量 × 滴定量 × 50 × 1000) × 0.95, 2)
- * - 反滴：(G量 − 滴定量) × 定容 × 100 × 100 / (称样量 × 10 × 1000 × 50)
- * - 反滴（蔗糖计）：(G量 − 滴定量) × 定容 × 100 × 0.95 × 100 / (50 × 称样量 × 10 × 1000)
- * 正滴保留 2 位小数，反滴不取整（与原表一致）。
+ * - 正滴：ROUND(G量 × 100 × 稀释倍数 × 定容 × 100 / (取用体积 × 称样量 × 滴定量 × 1000), 2)
+ * - 正滴（蔗糖计）：ROUND(G量 × 100 × 稀释倍数 × 100 × 定容 / (称样量 × 滴定量 × 取用体积 × 1000) × 0.95, 2)
+ * - 反滴：(G量 − 滴定量) × 定容 × 100 × 100 / (称样量 × 10 × 1000 × 取用体积)
+ * - 反滴（蔗糖计）：(G量 − 滴定量) × 定容 × 100 × 0.95 × 100 / (取用体积 × 称样量 × 10 × 1000)
+ * 取用体积默认 50（原表公式固定值）；正滴保留 2 位小数，反滴不取整（与原表一致）。
  */
 export function calcTotalSugar(
   input: TotalSugarInput,
@@ -475,17 +487,21 @@ export function calcTotalSugar(
   if (mass === null || volume === null || g === null) return null
   if (mass === 0 || volume === 0) return null
   const flask = shared.flaskVolume ?? TOTAL_SUGAR_DEFAULT_FLASK
+  const useVol = shared.useVolume ?? TOTAL_SUGAR_DEFAULT_USE_VOLUME
   if (mode === 'direct') {
     if (dilution === null) return null
     if (sucroseBasis) {
-      return excelRound(((g * 100 * dilution * 100 * flask) / mass / volume / 50 / 1000) * 0.95, 2)
+      return excelRound(
+        ((g * 100 * dilution * 100 * flask) / mass / volume / useVol / 1000) * 0.95,
+        2,
+      )
     }
-    return excelRound((g * 100 * dilution * flask * 100) / 50 / mass / volume / 1000, 2)
+    return excelRound((g * 100 * dilution * flask * 100) / useVol / mass / volume / 1000, 2)
   }
   if (sucroseBasis) {
-    return ((g - volume) * flask * 100 * 0.95 * 100) / 50 / mass / 10 / 1000
+    return ((g - volume) * flask * 100 * 0.95 * 100) / useVol / mass / 10 / 1000
   }
-  return ((g - volume) * flask * 100 * 100) / mass / 10 / 1000 / 50
+  return ((g - volume) * flask * 100 * 100) / mass / 10 / 1000 / useVol
 }
 
 /** 总糖平行样统计 */

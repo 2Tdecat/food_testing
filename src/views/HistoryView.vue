@@ -247,7 +247,8 @@ function titrationModeLabel(r: AnyRecord): string {
   if (type.value === 'total-sugar') {
     const t = r as TotalSugarRecord
     const flask = t.mode === 'direct' && t.flaskVolume === 200 ? '·定200' : ''
-    return `${t.mode === 'direct' ? '正滴' : '反滴'}${flask}${t.sucroseBasis ? '·蔗糖计' : ''}`
+    const useVol = t.useVolume != null && t.useVolume !== 50 ? `·取${t.useVolume}` : ''
+    return `${t.mode === 'direct' ? '正滴' : '反滴'}${flask}${useVol}${t.sucroseBasis ? '·蔗糖计' : ''}`
   }
   if (type.value === 'starch') {
     const t = r as StarchRecord

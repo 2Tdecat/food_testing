@@ -413,7 +413,8 @@ function buildTotalSugarSheets(records: TotalSugarRecord[]): SheetSpec[] {
   const specs: SheetSpec[] = []
 
   // 正滴表（含蔗糖计变体）：B 编号 | C 名称 | D 标定G量 | E 称样量 | F 稀释倍数
-  //                    | G 滴定量 | H 糖含量 | I 平均值 | J 误差 | K 定容 | L 质量差
+  //                    | G 滴定量 | H 糖含量 | I 平均值 | J 误差 | K 定容
+  //                    | L 取用体积 | M 质量差（取用体积列置于定容列后）
   for (const idx of [0, 2]) {
     const list = groups[idx]
     if (!list || list.length === 0) continue
@@ -430,12 +431,14 @@ function buildTotalSugarSheets(records: TotalSugarRecord[]): SheetSpec[] {
       '平均值',
       '误差',
       '定容',
+      '取用体积',
       '质量差',
     ]
     const rows: (string | number | null)[][] = [header]
     for (const r of list) {
       const [a, b] = r.runs
       const flask = r.flaskVolume ?? 250
+      const useVol = r.useVolume ?? 50
       rows.push([
         null,
         r.sampleNo,
@@ -448,6 +451,7 @@ function buildTotalSugarSheets(records: TotalSugarRecord[]): SheetSpec[] {
         n(r.avg),
         n(r.relErrorPct),
         `定${flask}`,
+        n(useVol),
         n(r.massDiff),
       ])
       rows.push([
@@ -462,6 +466,7 @@ function buildTotalSugarSheets(records: TotalSugarRecord[]): SheetSpec[] {
         '',
         '',
         '',
+        n(useVol),
         '',
       ])
     }
@@ -470,30 +475,32 @@ function buildTotalSugarSheets(records: TotalSugarRecord[]): SheetSpec[] {
       const row = 2 + i * 2
       const row2 = row + 1
       const flask = r.flaskVolume ?? 250
-      // H：正滴 ROUND(G量×100×稀释×定容×100/50/称样量/滴定量/1000,2)；
-      //    蔗糖计 ROUND(G量×100×稀释×100×定容/称样量/滴定量/50/1000×0.95,2)
+      // H：正滴 ROUND(G量×100×稀释×定容×100/取用体积/称样量/滴定量/1000,2)，
+      //    取用体积引用 L 列单元格（Excel 中修改后自动重算）；
+      //    蔗糖计 ROUND(G量×100×稀释×100×定容/称样量/滴定量/取用体积/1000×0.95,2)
       const h = sucrose
-        ? `=ROUND(D${row}*100*F${row}*100*${flask}/E${row}/G${row}/50/1000*0.95,2)`
-        : `=ROUND(D${row}*100*F${row}*${flask}*100/50/E${row}/G${row}/1000,2)`
+        ? `=ROUND(D${row}*100*F${row}*100*${flask}/E${row}/G${row}/L${row}/1000*0.95,2)`
+        : `=ROUND(D${row}*100*F${row}*${flask}*100/L${row}/E${row}/G${row}/1000,2)`
       const h2 = sucrose
-        ? `=ROUND(D${row2}*100*F${row2}*100*${flask}/E${row2}/G${row2}/50/1000*0.95,2)`
-        : `=ROUND(D${row2}*100*F${row2}*${flask}*100/50/E${row2}/G${row2}/1000,2)`
+        ? `=ROUND(D${row2}*100*F${row2}*100*${flask}/E${row2}/G${row2}/L${row2}/1000*0.95,2)`
+        : `=ROUND(D${row2}*100*F${row2}*${flask}*100/L${row2}/E${row2}/G${row2}/1000,2)`
       setFormula(ws, `H${row}`, h)
       setFormula(ws, `H${row2}`, h2)
       // I：平均值 ROUND(…,1)；J：误差 = (含量₁−含量₂)×100/平均值
       setFormula(ws, `I${row}`, `=ROUND((H${row}+H${row2})/2,1)`)
       setFormula(ws, `J${row}`, `=(H${row}-H${row2})*100/I${row}`)
-      // L：质量差 = 含量₂−含量₁（与原表 L 列公式一致）
-      setFormula(ws, `L${row}`, `=H${row2}-H${row}`)
+      // M：质量差 = 含量₂−含量₁（与原表公式方向一致）
+      setFormula(ws, `M${row}`, `=H${row2}-H${row}`)
     })
     applyColWidths(ws, header)
     specs.push({ name: sucrose ? '总糖正滴（蔗糖计）' : '总糖正滴', ws })
   }
 
   // 反滴表（含蔗糖计变体）：非蔗糖计从 B 列起（B 名称 | C 编号 | D 标定G量 | E 称样量
-  //   | F 滴定量 | G 糖含量 | H 平均值 | I 误差 | J 质量差），
+  //   | F 滴定量 | G 糖含量 | H 平均值 | I 误差 | J 质量差 | K 取用体积，
+  //   原表无定容列，取用体积列置于表尾），
   //   蔗糖计从 A 列起（A 名称 | B 编号 | C 标定G量 | D 称样量 | E 滴定量
-  //   | F 糖含量 | G 平均值 | H 误差 | I 定容），均与原表列位一致
+  //   | F 糖含量 | G 平均值 | H 误差 | I 定容 | J 取用体积），均与原表列位一致
   for (const idx of [1, 3]) {
     const list = groups[idx]
     if (!list || list.length === 0) continue
@@ -509,6 +516,7 @@ function buildTotalSugarSheets(records: TotalSugarRecord[]): SheetSpec[] {
           '平均值',
           '误差',
           '定容',
+          '取用体积',
         ]
       : [
           null,
@@ -521,11 +529,13 @@ function buildTotalSugarSheets(records: TotalSugarRecord[]): SheetSpec[] {
           '平均值',
           '误差',
           '质量差',
+          '取用体积',
         ]
     const rows: (string | number | null)[][] = [header]
     for (const r of list) {
       const [a, b] = r.runs
       const flask = r.flaskVolume ?? 250
+      const useVol = r.useVolume ?? 50
       if (sucrose) {
         rows.push([
           r.sampleName,
@@ -537,8 +547,9 @@ function buildTotalSugarSheets(records: TotalSugarRecord[]): SheetSpec[] {
           n(r.avg),
           n(r.relErrorPct),
           `定${flask}`,
+          n(useVol),
         ])
-        rows.push(['', '', n(r.g), n(b.mass), n(b.volume), n(r.content[1]), '', '', ''])
+        rows.push(['', '', n(r.g), n(b.mass), n(b.volume), n(r.content[1]), '', '', '', n(useVol)])
       } else {
         rows.push([
           null,
@@ -551,8 +562,21 @@ function buildTotalSugarSheets(records: TotalSugarRecord[]): SheetSpec[] {
           n(r.avg),
           n(r.relErrorPct),
           n(r.massDiff),
+          n(useVol),
         ])
-        rows.push([null, '', '', n(r.g), n(b.mass), n(b.volume), n(r.content[1]), '', '', ''])
+        rows.push([
+          null,
+          '',
+          '',
+          n(r.g),
+          n(b.mass),
+          n(b.volume),
+          n(r.content[1]),
+          '',
+          '',
+          '',
+          n(useVol),
+        ])
       }
     }
     const ws = XLSX.utils.aoa_to_sheet(rows)
@@ -561,16 +585,30 @@ function buildTotalSugarSheets(records: TotalSugarRecord[]): SheetSpec[] {
       const row2 = row + 1
       const flask = r.flaskVolume ?? 250
       if (sucrose) {
-        // F：反滴（蔗糖计）(G量−滴定量)×定容×100×0.95×100/50/称样量/10/1000
-        setFormula(ws, `F${row}`, `=(C${row}-E${row})*${flask}*100*0.95*100/50/D${row}/10/1000`)
-        setFormula(ws, `F${row2}`, `=(C${row2}-E${row2})*${flask}*100*0.95*100/50/D${row2}/10/1000`)
+        // F：反滴（蔗糖计）(G量−滴定量)×定容×100×0.95×100/取用体积/称样量/10/1000，
+        //    取用体积引用 J 列单元格（Excel 中修改后自动重算）
+        setFormula(
+          ws,
+          `F${row}`,
+          `=(C${row}-E${row})*${flask}*100*0.95*100/J${row}/D${row}/10/1000`,
+        )
+        setFormula(
+          ws,
+          `F${row2}`,
+          `=(C${row2}-E${row2})*${flask}*100*0.95*100/J${row2}/D${row2}/10/1000`,
+        )
         // G：平均值不取整；H：误差不取整（与原表一致）
         setFormula(ws, `G${row}`, `=(F${row}+F${row2})/2`)
         setFormula(ws, `H${row}`, `=(F${row}-F${row2})/G${row}*100`)
       } else {
-        // G：反滴 (G量−滴定量)×定容×100×100/称样量/10/1000/50
-        setFormula(ws, `G${row}`, `=(D${row}-F${row})*${flask}*100*100/E${row}/10/1000/50`)
-        setFormula(ws, `G${row2}`, `=(D${row2}-F${row2})*${flask}*100*100/E${row2}/10/1000/50`)
+        // G：反滴 (G量−滴定量)×定容×100×100/称样量/10/1000/取用体积，
+        //    取用体积引用 K 列单元格（Excel 中修改后自动重算）
+        setFormula(ws, `G${row}`, `=(D${row}-F${row})*${flask}*100*100/E${row}/10/1000/K${row}`)
+        setFormula(
+          ws,
+          `G${row2}`,
+          `=(D${row2}-F${row2})*${flask}*100*100/E${row2}/10/1000/K${row2}`,
+        )
         // H：平均值不取整；I：误差 ROUND(…,1)；J：质量差 = 含量₁−含量₂
         setFormula(ws, `H${row}`, `=(G${row}+G${row2})/2`)
         setFormula(ws, `I${row}`, `=ROUND((G${row}-G${row2})/H${row}*100,1)`)

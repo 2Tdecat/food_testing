@@ -132,6 +132,8 @@ export interface TotalSugarRecord {
   dilution: number | null
   /** 定容体积 mL（250 或 200，缺省按 250 处理） */
   flaskVolume?: number | null
+  /** 取用体积 mL（滴定所取试样定容溶液体积，缺省按 50 处理） */
+  useVolume?: number | null
   runs: [TotalSugarRunInput, TotalSugarRunInput]
   /** 各平行样糖含量（g/100g，与 runs 顺序对应） */
   content: [number, number]

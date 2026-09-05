@@ -3,11 +3,13 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import LabInput from '@/components/LabInput.vue'
 import {
   TOTAL_SUGAR_DEFAULT_FLASK,
+  TOTAL_SUGAR_DEFAULT_USE_VOLUME,
   calcTotalSugar,
   genTotalSugarRun2,
   RULE_DILUTION as ruleDilution,
   RULE_TITR_G as ruleG,
   RULE_TITR_MASS as ruleMass,
+  RULE_TOTAL_SUGAR_USE_VOLUME as ruleUseVolume,
   RULE_VOLUME as ruleVolume,
   titrationPrecisionLimit,
   totalSugarStats,
@@ -23,6 +25,8 @@ export interface TotalSugarInitial {
   dilution: number | null
   /** 定容体积（mL，250 或 200，缺省 250） */
   flaskVolume?: number | null
+  /** 取用体积（mL，缺省 50） */
+  useVolume?: number | null
   runs: [
     { mass: number | null; volume: number | null },
     { mass: number | null; volume: number | null },
@@ -76,6 +80,12 @@ function onFlaskChange(v: number) {
   flask.value = v
 }
 
+/** 取用体积（mL）：滴定所取试样定容溶液体积，原表公式固定 50，正反滴均使用 */
+const useVolume = ref<number | null>(TOTAL_SUGAR_DEFAULT_USE_VOLUME)
+
+/** 公式展示用取用体积（输入清空时按默认 50 计算与展示） */
+const uv = computed(() => useVolume.value ?? TOTAL_SUGAR_DEFAULT_USE_VOLUME)
+
 /** 反滴模式下滴定量必须小于标定G量，否则含量为负 */
 const volumeRule = computed<ValidationRule>(() => {
   if (mode.value !== 'back' || g.value === null) return ruleVolume
@@ -112,6 +122,7 @@ function genRun2() {
       g: g.value,
       dilution: dilution.value,
       flaskVolume: flask.value,
+      useVolume: uv.value,
     },
   )
   Object.assign(run2, gen ?? { mass: null, volume: null })
@@ -125,6 +136,7 @@ watch(
     g.value,
     dilution.value,
     flask.value,
+    useVolume.value,
     mode.value,
     sucroseBasis.value,
   ],
@@ -151,6 +163,7 @@ function applyInitial(init: NonNullable<TotalSugarInitial>) {
   g.value = nn(init.g)
   dilution.value = nn(init.dilution)
   flask.value = init.flaskVolume === 200 ? 200 : TOTAL_SUGAR_DEFAULT_FLASK
+  useVolume.value = nn(init.useVolume) ?? TOTAL_SUGAR_DEFAULT_USE_VOLUME
   Object.assign(run1, {
     mass: nn(init.runs[0]?.mass),
     volume: nn(init.runs[0]?.volume),
@@ -172,6 +185,7 @@ const shared = computed(() => ({
   g: g.value,
   dilution: dilution.value,
   flaskVolume: flask.value,
+  useVolume: uv.value,
 }))
 const res1 = computed(() => calcTotalSugar(run1, shared.value))
 const res2 = computed(() => calcTotalSugar(run2, shared.value))
@@ -218,24 +232,24 @@ const content1Line = computed(() => {
   if (res1.value === null) return '含量₁ = --'
   if (mode.value === 'direct') {
     return sucroseBasis.value
-      ? `含量₁ = G量 × 100 × 稀释倍数 × 100 × ${flask.value} / (m₁ × V₁ × 50 × 1000) × 0.95 = ${fmt(res1.value)} g/100g（保留2位小数）`
-      : `含量₁ = G量 × 100 × 稀释倍数 × ${flask.value} × 100 / (50 × m₁ × V₁ × 1000) = ${fmt(res1.value)} g/100g（保留2位小数）`
+      ? `含量₁ = G量 × 100 × 稀释倍数 × 100 × ${flask.value} / (m₁ × V₁ × ${uv.value} × 1000) × 0.95 = ${fmt(res1.value)} g/100g（保留2位小数）`
+      : `含量₁ = G量 × 100 × 稀释倍数 × ${flask.value} × 100 / (${uv.value} × m₁ × V₁ × 1000) = ${fmt(res1.value)} g/100g（保留2位小数）`
   }
   return sucroseBasis.value
-    ? `含量₁ = (G量 − V₁) × ${flask.value} × 100 × 0.95 × 100 / (50 × m₁ × 10 × 1000) = ${fmt(res1.value)} g/100g`
-    : `含量₁ = (G量 − V₁) × ${flask.value} × 100 × 100 / (m₁ × 10 × 1000 × 50) = ${fmt(res1.value)} g/100g`
+    ? `含量₁ = (G量 − V₁) × ${flask.value} × 100 × 0.95 × 100 / (${uv.value} × m₁ × 10 × 1000) = ${fmt(res1.value)} g/100g`
+    : `含量₁ = (G量 − V₁) × ${flask.value} × 100 × 100 / (m₁ × 10 × 1000 × ${uv.value}) = ${fmt(res1.value)} g/100g`
 })
 
 const content2Line = computed(() => {
   if (res2.value === null) return '含量₂ = --'
   if (mode.value === 'direct') {
     return sucroseBasis.value
-      ? `含量₂ = G量 × 100 × 稀释倍数 × 100 × ${flask.value} / (m₂ × V₂ × 50 × 1000) × 0.95 = ${fmt(res2.value)} g/100g（保留2位小数）`
-      : `含量₂ = G量 × 100 × 稀释倍数 × ${flask.value} × 100 / (50 × m₂ × V₂ × 1000) = ${fmt(res2.value)} g/100g（保留2位小数）`
+      ? `含量₂ = G量 × 100 × 稀释倍数 × 100 × ${flask.value} / (m₂ × V₂ × ${uv.value} × 1000) × 0.95 = ${fmt(res2.value)} g/100g（保留2位小数）`
+      : `含量₂ = G量 × 100 × 稀释倍数 × ${flask.value} × 100 / (${uv.value} × m₂ × V₂ × 1000) = ${fmt(res2.value)} g/100g（保留2位小数）`
   }
   return sucroseBasis.value
-    ? `含量₂ = (G量 − V₂) × ${flask.value} × 100 × 0.95 × 100 / (50 × m₂ × 10 × 1000) = ${fmt(res2.value)} g/100g`
-    : `含量₂ = (G量 − V₂) × ${flask.value} × 100 × 100 / (m₂ × 10 × 1000 × 50) = ${fmt(res2.value)} g/100g`
+    ? `含量₂ = (G量 − V₂) × ${flask.value} × 100 × 0.95 × 100 / (${uv.value} × m₂ × 10 × 1000) = ${fmt(res2.value)} g/100g`
+    : `含量₂ = (G量 − V₂) × ${flask.value} × 100 × 100 / (m₂ × 10 × 1000 × ${uv.value}) = ${fmt(res2.value)} g/100g`
 })
 
 const avgLine = computed(() =>
@@ -270,6 +284,7 @@ defineExpose({
     g.value = null
     dilution.value = null
     flask.value = TOTAL_SUGAR_DEFAULT_FLASK
+    useVolume.value = TOTAL_SUGAR_DEFAULT_USE_VOLUME
     Object.assign(run1, { mass: null, volume: null })
     Object.assign(run2, { mass: null, volume: null })
   },
@@ -295,6 +310,7 @@ defineExpose({
     g: g.value ?? Number.NaN,
     dilution: mode.value === 'direct' ? dilution.value : null,
     flaskVolume: mode.value === 'direct' ? flask.value : null,
+    useVolume: uv.value,
     runs: [{ ...run1 }, { ...run2 }] as [
       { mass: number | null; volume: number | null },
       { mass: number | null; volume: number | null },
@@ -353,6 +369,13 @@ defineExpose({
           </button>
         </div>
       </div>
+      <LabInput
+        v-model="useVolume"
+        label="取用体积"
+        suffix="mL"
+        placeholder="如 50"
+        :rule="ruleUseVolume"
+      />
 
       <div class="group-label">平行样 1</div>
       <LabInput
@@ -403,11 +426,11 @@ defineExpose({
           {{
             mode === 'direct'
               ? sucroseBasis
-                ? `总糖正滴（蔗糖计）：含量 = G量 × 100 × 稀释倍数 × 100 × ${flask} / (称样量 × 滴定量 × 50 × 1000) × 0.95`
-                : `总糖正滴：含量 = G量 × 100 × 稀释倍数 × ${flask} × 100 / (50 × 称样量 × 滴定量 × 1000)，${flask} 为定容体积（原表"定${flask}"）`
+                ? `总糖正滴（蔗糖计）：含量 = G量 × 100 × 稀释倍数 × 100 × ${flask} / (称样量 × 滴定量 × ${uv} × 1000) × 0.95`
+                : `总糖正滴：含量 = G量 × 100 × 稀释倍数 × ${flask} × 100 / (${uv} × 称样量 × 滴定量 × 1000)，${flask} 为定容体积（原表"定${flask}"），${uv} 为取用体积`
               : sucroseBasis
-                ? `总糖反滴（蔗糖计）：含量 = (G量 − 滴定量) × ${flask} × 100 × 0.95 × 100 / (50 × 称样量 × 10 × 1000)`
-                : `总糖反滴：含量 = (G量 − 滴定量) × ${flask} × 100 × 100 / (称样量 × 10 × 1000 × 50)`
+                ? `总糖反滴（蔗糖计）：含量 = (G量 − 滴定量) × ${flask} × 100 × 0.95 × 100 / (${uv} × 称样量 × 10 × 1000)`
+                : `总糖反滴：含量 = (G量 − 滴定量) × ${flask} × 100 × 100 / (称样量 × 10 × 1000 × ${uv})`
           }}
         </span>
       </div>

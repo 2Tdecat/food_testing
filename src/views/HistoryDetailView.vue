@@ -163,6 +163,7 @@ const totalSugarInitial = computed<TotalSugarInitial | undefined>(() =>
         g: totalSugarRecord.value.g,
         dilution: totalSugarRecord.value.dilution,
         flaskVolume: totalSugarRecord.value.flaskVolume ?? 250,
+        useVolume: totalSugarRecord.value.useVolume ?? 50,
         runs: totalSugarRecord.value.runs,
       }
     : undefined,
