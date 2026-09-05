@@ -56,6 +56,14 @@ export const tools: ToolItem[] = [
     icon: 'chart-bar',
     keywords: ['淀粉', '一法', '二法', '正滴', '反滴', '滴定', '糖含量'],
   },
+  {
+    id: 'dry-extract',
+    name: '干浸出物',
+    description: '干浸出物测定（密度法，葡萄酒/果酒）',
+    path: '/tools/dry-extract',
+    icon: 'chart-radar',
+    keywords: ['干浸出物', '浸出物', '葡萄酒', '果酒', '密度', '总干浸出物', '总糖', '蔗糖'],
+  },
 ]
 
 /** 按关键词搜索工具（匹配名称/描述/关键词） */

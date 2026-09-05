@@ -10,6 +10,7 @@ import {
   formatDateTime,
   loadHistory,
   type HistoryType,
+  type DryExtractRecord,
   type ReducingRecord,
   type StarchRecord,
   type SucroseRecord,
@@ -17,6 +18,7 @@ import {
   type TotalSugarRecord,
 } from '@/utils/history'
 import {
+  exportDryExtractHistory,
   exportReducingHistory,
   exportStarchHistory,
   exportSucroseHistory,
@@ -35,7 +37,11 @@ const router = useRouter()
 
 const type = computed<HistoryType>(() => {
   const t = String(route.params.type)
-  return t === 'reducing' || t === 'reducing-titration' || t === 'total-sugar' || t === 'starch'
+  return t === 'reducing' ||
+    t === 'reducing-titration' ||
+    t === 'total-sugar' ||
+    t === 'starch' ||
+    t === 'dry-extract'
     ? t
     : 'sucrose'
 })
@@ -46,12 +52,19 @@ const titles: Record<HistoryType, string> = {
   'reducing-titration': '还原糖（正/反滴）历史记录',
   'total-sugar': '总糖（正/反滴、蔗糖计）历史记录',
   starch: '淀粉（1/2法、正/反滴）历史记录',
+  'dry-extract': '干浸出物历史记录',
 }
 
 /** 刷新列表用的响应式触发器 */
 const version = ref(0)
 
-type AnyRecord = SucroseRecord | ReducingRecord | TitrationRecord | TotalSugarRecord | StarchRecord
+type AnyRecord =
+  | SucroseRecord
+  | ReducingRecord
+  | TitrationRecord
+  | TotalSugarRecord
+  | StarchRecord
+  | DryExtractRecord
 
 const records = computed<AnyRecord[]>(() => {
   version.value
@@ -206,6 +219,15 @@ function gridCells(r: AnyRecord): RecordGridCell[] {
       { k: '相对误差', v: `${fmt(t.relErrorPct)}%`, bad: Math.abs(t.relErrorPct) > limit },
     ]
   }
+  if (type.value === 'dry-extract') {
+    const t = r as DryExtractRecord
+    return [
+      { k: '干浸出物₁', v: fmt(t.content[0]) },
+      { k: '干浸出物₂', v: fmt(t.content[1]) },
+      { k: '平均值', v: fmt(t.avg) },
+      { k: '相对误差', v: `${fmt(t.relErrorPct)}%`, bad: Math.abs(t.relErrorPct) > 2 },
+    ]
+  }
   const t = r as TitrationRecord
   const limit = t.mode === 'direct' ? 5 : 10
   return [
@@ -218,6 +240,10 @@ function gridCells(r: AnyRecord): RecordGridCell[] {
 
 /** 滴定模式标签（还原糖/总糖/淀粉正反滴记录卡片显示，正滴附定容体积） */
 function titrationModeLabel(r: AnyRecord): string {
+  if (type.value === 'dry-extract') {
+    const t = r as DryExtractRecord
+    return `密度法${t.roundResult ? '·保留2位' : ''}`
+  }
   if (type.value === 'total-sugar') {
     const t = r as TotalSugarRecord
     const flask = t.mode === 'direct' && t.flaskVolume === 200 ? '·定200' : ''
@@ -288,6 +314,8 @@ function onBatchExport() {
     exportTotalSugarHistory(sel as TotalSugarRecord[])
   } else if (type.value === 'starch') {
     exportStarchHistory(sel as StarchRecord[])
+  } else if (type.value === 'dry-extract') {
+    exportDryExtractHistory(sel as DryExtractRecord[])
   } else {
     exportTitrationHistory(sel as TitrationRecord[])
   }
@@ -307,6 +335,8 @@ function onExport() {
     exportTotalSugarHistory(records.value as TotalSugarRecord[])
   } else if (type.value === 'starch') {
     exportStarchHistory(records.value as StarchRecord[])
+  } else if (type.value === 'dry-extract') {
+    exportDryExtractHistory(records.value as DryExtractRecord[])
   } else {
     exportTitrationHistory(records.value as TitrationRecord[])
   }
@@ -384,7 +414,10 @@ const navTitle = computed(() =>
               <div class="record-title">
                 <span
                   v-if="
-                    type === 'reducing-titration' || type === 'total-sugar' || type === 'starch'
+                    type === 'reducing-titration' ||
+                    type === 'total-sugar' ||
+                    type === 'starch' ||
+                    type === 'dry-extract'
                   "
                   class="record-mode"
                   >{{ titrationModeLabel(r) }}</span

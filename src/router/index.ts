@@ -39,13 +39,25 @@ const router = createRouter({
       component: () => import('../views/StarchCalcView.vue'),
     },
     {
-      // 历史记录列表（type: sucrose | reducing | reducing-titration | total-sugar | starch）
+      // 干浸出物（密度法）独立计算
+      path: '/tools/dry-extract',
+      name: 'dry-extract',
+      component: () => import('../views/DryExtractCalcView.vue'),
+    },
+    {
+      // 数据导出（按日期范围汇总导出全部类型记录到一个 Excel）
+      path: '/data-export',
+      name: 'data-export',
+      component: () => import('../views/DataExportView.vue'),
+    },
+    {
+      // 历史记录列表（type: sucrose | reducing | reducing-titration | total-sugar | starch | dry-extract）
       path: '/tools/history/:type',
       name: 'history',
       component: () => import('../views/HistoryView.vue'),
     },
     {
-      // 历史记录明细/编辑（type: sucrose | reducing | reducing-titration | total-sugar | starch）
+      // 历史记录明细/编辑（type: sucrose | reducing | reducing-titration | total-sugar | starch | dry-extract）
       path: '/tools/history/:type/:id',
       name: 'history-detail',
       component: () => import('../views/HistoryDetailView.vue'),

@@ -8,15 +8,22 @@
  *   （总糖正滴 / 总糖正滴（蔗糖计）/ 总糖反滴 / 总糖反滴（蔗糖计））
  * - 淀粉（1/2法、正/反滴）：四表列布局与公式一致
  *   （淀粉一法 / 淀粉二法 / 淀粉1法反滴 / 淀粉2反滴）
+ * - 干浸出物：列布局与 15038糖11.xlsx"干浸出物"表一致
+ *   （密度/蔗糖/干浸出物结果列带公式）
  * 每条记录占两行（对应两个平行样），平均值/相对误差写在首行。
  *
  * 结果列（干固物重-G、含量、平均值、相对误差等）
  * 均写入 Excel 公式并引用变量单元格：在 Excel 中修改变量后结果自动重算
  * （Excel 默认 calcMode=auto），与实验室原 Excel 的使用效果一致；
  * 同时写入缓存值，打开即可见结果。
+ *
+ * exportCombinedHistory：将多类型记录汇总导出到同一个 Excel 文件，
+ * 每种类型的数据放到独立的 sheet（多模式类型按现有导出规则拆分多个 sheet），
+ * sheet 内格式与各类型单独导出完全一致。
  */
 import * as XLSX from 'xlsx'
 import type {
+  DryExtractRecord,
   ReducingRecord,
   StarchRecord,
   SucroseRecord,
@@ -24,10 +31,21 @@ import type {
   TotalSugarRecord,
 } from './history'
 import { formatDate } from './history'
-import { F_TABLE } from './sugarCalc'
+import { F_TABLE, calcDryExtract } from './sugarCalc'
 
 /** 表2 兰-艾农恒容法校正系数表（f 查表插值用）的独立工作表名 */
 const F_SHEET = '表2-f系数'
+
+/** 待附加到工作簿的 sheet（名称 + 工作表） */
+interface SheetSpec {
+  name: string
+  ws: XLSX.WorkSheet
+}
+
+/** 将 sheet 依次附加到工作簿 */
+function appendSheets(wb: XLSX.WorkBook, specs: SheetSpec[]): void {
+  for (const s of specs) XLSX.utils.book_append_sheet(wb, s.ws, s.name)
+}
 
 /** 数值保留 4 位小数，非有限值返回空串 */
 function n(v: number | null | undefined): number | string {
@@ -54,8 +72,8 @@ function fLookupFormula(row: number): string {
   )
 }
 
-/** 导出绵白糖蔗糖分-5012 历史记录 */
-export function exportSucroseHistory(records: SucroseRecord[]): void {
+/** 构建绵白糖蔗糖分-5012 工作表 */
+function buildSucroseSheet(records: SucroseRecord[]): SheetSpec {
   const rows: (string | number)[][] = [
     [
       '日期',
@@ -129,13 +147,19 @@ export function exportSucroseHistory(records: SucroseRecord[]): void {
     )
   })
 
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, '绵白糖蔗糖分-5012')
-  download(wb, '绵白糖蔗糖分-5012', rows)
+  applyColWidths(ws, rows[0] ?? [])
+  return { name: '绵白糖蔗糖分-5012', ws }
 }
 
-/** 导出红糖还原糖历史记录 */
-export function exportReducingHistory(records: ReducingRecord[]): void {
+/** 导出绵白糖蔗糖分-5012 历史记录 */
+export function exportSucroseHistory(records: SucroseRecord[]): void {
+  const wb = XLSX.utils.book_new()
+  appendSheets(wb, [buildSucroseSheet(records)])
+  download(wb, '绵白糖蔗糖分-5012')
+}
+
+/** 构建红糖还原糖工作表（主表 + 表2-f系数查表页） */
+function buildReducingSheets(records: ReducingRecord[]): SheetSpec[] {
   const rows: (string | number)[][] = [
     [
       '日期',
@@ -213,23 +237,32 @@ export function exportReducingHistory(records: ReducingRecord[]): void {
     setFormula(ws, `L${row2}`, `=1000*K${row2}*E${row2}/(I${row2}*G${row2})`)
   })
 
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, '红糖还原糖')
+  applyColWidths(ws, rows[0] ?? [])
+
   // 表2 f 系数表（K 列公式查表插值用）
   const fRows: (string | number)[][] = [['G1(g)', 'f']]
   for (const [g, f] of F_TABLE) fRows.push([g, f])
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(fRows), F_SHEET)
-  download(wb, '红糖还原糖', rows)
+  const fWs = XLSX.utils.aoa_to_sheet(fRows)
+  applyColWidths(fWs, fRows[0] ?? [])
+  return [
+    { name: '红糖还原糖', ws },
+    { name: F_SHEET, ws: fWs },
+  ]
 }
 
-/** 导出还原糖（正/反滴）历史记录（列布局与公式与 糖.xlsx"还原糖正滴/反滴"表一致） */
-export function exportTitrationHistory(records: TitrationRecord[]): void {
-  if (records.length === 0) return
+/** 导出红糖还原糖历史记录 */
+export function exportReducingHistory(records: ReducingRecord[]): void {
+  const wb = XLSX.utils.book_new()
+  appendSheets(wb, buildReducingSheets(records))
+  download(wb, '红糖还原糖')
+}
+
+/** 构建还原糖（正/反滴）工作表（列布局与公式与 糖.xlsx"还原糖正滴/反滴"表一致） */
+function buildTitrationSheets(records: TitrationRecord[]): SheetSpec[] {
+  if (records.length === 0) return []
   const directs = records.filter((r) => r.mode === 'direct')
   const backs = records.filter((r) => r.mode === 'back')
-
-  const wb = XLSX.utils.book_new()
-  let firstRows: (string | number | null)[][] = []
+  const specs: SheetSpec[] = []
 
   // "还原糖正滴"表：B 编号 | C 名称 | D 标定G量 | E 称样量 | F 稀释倍数 | G 滴定量
   //                | H 糖含量 | I 平均值 | J 误差 | K 质量差 |（L 列"定250/定100"为原表备注）
@@ -296,8 +329,7 @@ export function exportTitrationHistory(records: TitrationRecord[]): void {
       setFormula(ws, `H${row2}`, `=ROUND(D${row2}*100*F${row2}*${flask}/E${row2}/G${row2}/1000,2)`)
     })
     applyColWidths(ws, rows[1] ?? [])
-    XLSX.utils.book_append_sheet(wb, ws, '还原糖正滴')
-    firstRows = rows
+    specs.push({ name: '还原糖正滴', ws })
   }
 
   // "还原糖反滴"表：B 编号 | C 名称 | D 标定G量 | E 称样量 | F 滴定量
@@ -345,22 +377,31 @@ export function exportTitrationHistory(records: TitrationRecord[]): void {
       setFormula(ws, `G${row2}`, `=(D${row2}-F${row2})*250*100/E${row2}/10/1000`)
     })
     applyColWidths(ws, rows[0] ?? [])
-    XLSX.utils.book_append_sheet(wb, ws, '还原糖反滴')
-    if (firstRows.length === 0) firstRows = rows
+    specs.push({ name: '还原糖反滴', ws })
   }
-
-  const baseName =
-    directs.length > 0 && backs.length > 0
-      ? '还原糖正反滴'
-      : directs.length > 0
-        ? '还原糖正滴'
-        : '还原糖反滴'
-  download(wb, baseName, firstRows)
+  return specs
 }
 
-/** 导出总糖（正/反滴、蔗糖计）历史记录（列布局与公式与 糖.xlsx 四个"总糖"表一致） */
-export function exportTotalSugarHistory(records: TotalSugarRecord[]): void {
-  if (records.length === 0) return
+/** 导出还原糖（正/反滴）历史记录 */
+export function exportTitrationHistory(records: TitrationRecord[]): void {
+  const specs = buildTitrationSheets(records)
+  if (specs.length === 0) return
+  const wb = XLSX.utils.book_new()
+  appendSheets(wb, specs)
+  const directCount = records.filter((r) => r.mode === 'direct').length
+  const backCount = records.filter((r) => r.mode === 'back').length
+  const baseName =
+    directCount > 0 && backCount > 0
+      ? '还原糖正反滴'
+      : directCount > 0
+        ? '还原糖正滴'
+        : '还原糖反滴'
+  download(wb, baseName)
+}
+
+/** 构建总糖（正/反滴、蔗糖计）工作表（列布局与公式与 糖.xlsx 四个"总糖"表一致） */
+function buildTotalSugarSheets(records: TotalSugarRecord[]): SheetSpec[] {
+  if (records.length === 0) return []
   // 按模式 × 蔗糖计分四组，各组对应原 Excel 一张表
   const groups: TotalSugarRecord[][] = [
     records.filter((r) => r.mode === 'direct' && !r.sucroseBasis), // 总糖正滴
@@ -369,8 +410,7 @@ export function exportTotalSugarHistory(records: TotalSugarRecord[]): void {
     records.filter((r) => r.mode === 'back' && r.sucroseBasis), // 总糖反滴（蔗糖计）
   ]
 
-  const wb = XLSX.utils.book_new()
-  let firstHeader: (string | number | null)[] = []
+  const specs: SheetSpec[] = []
 
   // 正滴表（含蔗糖计变体）：B 编号 | C 名称 | D 标定G量 | E 称样量 | F 稀释倍数
   //                    | G 滴定量 | H 糖含量 | I 平均值 | J 误差 | K 定容 | L 质量差
@@ -447,8 +487,7 @@ export function exportTotalSugarHistory(records: TotalSugarRecord[]): void {
       setFormula(ws, `L${row}`, `=H${row2}-H${row}`)
     })
     applyColWidths(ws, header)
-    XLSX.utils.book_append_sheet(wb, ws, sucrose ? '总糖正滴（蔗糖计）' : '总糖正滴')
-    if (firstHeader.length === 0) firstHeader = header
+    specs.push({ name: sucrose ? '总糖正滴（蔗糖计）' : '总糖正滴', ws })
   }
 
   // 反滴表（含蔗糖计变体）：非蔗糖计从 B 列起（B 名称 | C 编号 | D 标定G量 | E 称样量
@@ -539,26 +578,29 @@ export function exportTotalSugarHistory(records: TotalSugarRecord[]): void {
       }
     })
     applyColWidths(ws, header)
-    XLSX.utils.book_append_sheet(wb, ws, sucrose ? '总糖反滴（蔗糖计）' : '总糖反滴')
-    if (firstHeader.length === 0) firstHeader = header
+    specs.push({ name: sucrose ? '总糖反滴（蔗糖计）' : '总糖反滴', ws })
   }
+  return specs
+}
 
-  const directs = groups[0] ?? []
-  const backs = groups[1] ?? []
-  const directSucrose = groups[2] ?? []
-  const backSucrose = groups[3] ?? []
-  const hasDirect = directs.length + directSucrose.length > 0
-  const hasBack = backs.length + backSucrose.length > 0
-  const hasSucrose = directSucrose.length + backSucrose.length > 0
+/** 导出总糖（正/反滴、蔗糖计）历史记录 */
+export function exportTotalSugarHistory(records: TotalSugarRecord[]): void {
+  const specs = buildTotalSugarSheets(records)
+  if (specs.length === 0) return
+  const wb = XLSX.utils.book_new()
+  appendSheets(wb, specs)
+  const hasDirect = records.some((r) => r.mode === 'direct')
+  const hasBack = records.some((r) => r.mode === 'back')
+  const hasSucrose = records.some((r) => r.sucroseBasis)
   let baseName = '总糖'
   baseName += hasDirect && hasBack ? '正反滴' : hasDirect ? '正滴' : '反滴'
   if (hasSucrose) baseName += '（蔗糖计）'
-  download(wb, baseName, [firstHeader])
+  download(wb, baseName)
 }
 
-/** 导出淀粉（1/2法、正/反滴）历史记录（列布局与公式与 糖.xlsx 四个"淀粉"表一致） */
-export function exportStarchHistory(records: StarchRecord[]): void {
-  if (records.length === 0) return
+/** 构建淀粉（1/2法、正/反滴）工作表（列布局与公式与 糖.xlsx 四个"淀粉"表一致） */
+function buildStarchSheets(records: StarchRecord[]): SheetSpec[] {
+  if (records.length === 0) return []
   // 按 模式 × 方法 分四组，各组对应原 Excel 一张表
   const groups: StarchRecord[][] = [
     records.filter((r) => r.mode === 'direct' && r.method === 1), // 淀粉一法
@@ -567,8 +609,7 @@ export function exportStarchHistory(records: StarchRecord[]): void {
     records.filter((r) => r.mode === 'back' && r.method === 2), // 淀粉2反滴
   ]
 
-  const wb = XLSX.utils.book_new()
-  let firstHeader: (string | number | null)[] = []
+  const specs: SheetSpec[] = []
 
   // 淀粉一法（正滴）：A 编号 | B 名称 | C 标定G量 | D 称样量 | E 稀释倍数
   //                 | F 滴定量 | G 糖含量 | H 平均值 | I 误差 | J 质量差（定容标记）
@@ -637,8 +678,7 @@ export function exportStarchHistory(records: StarchRecord[]): void {
         setFormula(ws, `I${row}`, `=(G${row}-G${row2})*100/H${row}`)
       })
       applyColWidths(ws, header)
-      XLSX.utils.book_append_sheet(wb, ws, '淀粉一法')
-      if (firstHeader.length === 0) firstHeader = header
+      specs.push({ name: '淀粉一法', ws })
     }
   }
 
@@ -706,8 +746,7 @@ export function exportStarchHistory(records: StarchRecord[]): void {
         setFormula(ws, `J${row}`, `=(H${row}-H${row2})/I${row}*100`)
       })
       applyColWidths(ws, header)
-      XLSX.utils.book_append_sheet(wb, ws, '淀粉二法')
-      if (firstHeader.length === 0) firstHeader = header
+      specs.push({ name: '淀粉二法', ws })
     }
   }
 
@@ -754,8 +793,7 @@ export function exportStarchHistory(records: StarchRecord[]): void {
         setFormula(ws, `H${row}`, `=ROUND((F${row}-F${row2})/G${row}*100,1)`)
       })
       applyColWidths(ws, header)
-      XLSX.utils.book_append_sheet(wb, ws, '淀粉1法反滴')
-      if (firstHeader.length === 0) firstHeader = header
+      specs.push({ name: '淀粉1法反滴', ws })
     }
   }
 
@@ -826,38 +864,169 @@ export function exportStarchHistory(records: StarchRecord[]): void {
         setFormula(ws, `J${row}`, `=(H${row}-H${row2})/I${row}*100`)
       })
       applyColWidths(ws, header)
-      XLSX.utils.book_append_sheet(wb, ws, '淀粉2反滴')
-      if (firstHeader.length === 0) firstHeader = header
+      specs.push({ name: '淀粉2反滴', ws })
     }
   }
+  return specs
+}
 
-  const m1Direct = groups[0] ?? []
-  const m2Direct = groups[1] ?? []
-  const m1Back = groups[2] ?? []
-  const m2Back = groups[3] ?? []
-  const hasDirect = m1Direct.length + m2Direct.length > 0
-  const hasBack = m1Back.length + m2Back.length > 0
+/** 导出淀粉（1/2法、正/反滴）历史记录 */
+export function exportStarchHistory(records: StarchRecord[]): void {
+  const specs = buildStarchSheets(records)
+  if (specs.length === 0) return
+  const wb = XLSX.utils.book_new()
+  appendSheets(wb, specs)
+  const hasDirect = records.some((r) => r.mode === 'direct')
+  const hasBack = records.some((r) => r.mode === 'back')
   let baseName = '淀粉'
   baseName += hasDirect && hasBack ? '正反滴' : hasDirect ? '正滴' : '反滴'
   const methods = new Set<number>()
   for (const r of records) methods.add(r.method)
   if (methods.size === 1) baseName += methods.has(1) ? '1法' : '2法'
-  download(wb, baseName, [firstHeader])
+  download(wb, baseName)
 }
 
-/** 生成工作簿并触发下载 */
-function download(wb: XLSX.WorkBook, baseName: string, rows: (string | number | null)[][]): void {
-  const firstName = wb.SheetNames[0]
-  const ws = firstName ? wb.Sheets[firstName] : undefined
-  if (ws) {
-    // 列宽（与现有 Excel 大致一致的阅读宽度）
-    applyColWidths(ws, rows[0] ?? [])
+/** 构建干浸出物（密度法）工作表（列布局与公式与 15038糖11.xlsx"干浸出物"表一致） */
+function buildDryExtractSheet(records: DryExtractRecord[]): SheetSpec {
+  // 原表布局：A 编号 | B 名称 | C 原液密度 | D 蒸馏液密度 | E 密度g/ml
+  //          | F 总干浸出物g/L | G 总糖g/L | H 还原糖g/L | I 蔗糖g/L | J 干浸出物g/L
+  // 表头在第 1 行（A1/B1 空），数据自第 2 行起；总糖/还原糖两平行样共享
+  const header: (string | null)[] = [
+    null,
+    null,
+    '原液密度',
+    '蒸馏液密度',
+    '密度g/ml',
+    '总干浸出物g/L',
+    '总糖g/L',
+    '还原糖g/L',
+    '蔗糖g/L',
+    '干浸出物g/L',
+  ]
+  const rows: (string | number | null)[][] = [header]
+  for (const r of records) {
+    const [a, b] = r.runs
+    const shared = {
+      totalSugar: r.totalSugar,
+      reducingSugar: r.reducingSugar,
+      roundResult: r.roundResult,
+    }
+    const ra = calcDryExtract(a, shared)
+    const rb = calcDryExtract(b, shared)
+    rows.push([
+      r.sampleNo,
+      r.sampleName,
+      n(a.densityOriginal),
+      n(a.densityDistilled),
+      n(ra?.density ?? null),
+      n(a.totalExtract),
+      n(r.totalSugar),
+      n(r.reducingSugar),
+      n(ra?.sucrose ?? null),
+      n(r.content[0]),
+    ])
+    rows.push([
+      '',
+      '',
+      n(b.densityOriginal),
+      n(b.densityDistilled),
+      n(rb?.density ?? null),
+      n(b.totalExtract),
+      n(r.totalSugar),
+      n(r.reducingSugar),
+      n(rb?.sucrose ?? null),
+      n(r.content[1]),
+    ])
   }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows)
+  // 结果列写入公式（与原表一致，修改变量后自动重算）：
+  // E：密度 ROUND(((C×1000−D×1000)+1000)/1000,4)；I：蔗糖 (G−H)×0.95（不取整）
+  // J：干浸出物 F−H−I（roundResult 记录用原表 ROUND(…,2) 变体）
+  records.forEach((r, i) => {
+    const row = 2 + i * 2
+    for (const rr of [row, row + 1]) {
+      setFormula(ws, `E${rr}`, `=ROUND((((C${rr}*1000)-(D${rr}*1000))+1000)/1000,4)`)
+      setFormula(ws, `I${rr}`, `=(G${rr}-H${rr})*0.95`)
+      setFormula(
+        ws,
+        `J${rr}`,
+        r.roundResult ? `=ROUND(F${rr}-H${rr}-I${rr},2)` : `=F${rr}-H${rr}-I${rr}`,
+      )
+    }
+  })
+  applyColWidths(ws, header)
+  return { name: '干浸出物', ws }
+}
+
+/** 导出干浸出物（密度法）历史记录 */
+export function exportDryExtractHistory(records: DryExtractRecord[]): void {
+  if (records.length === 0) return
+  const wb = XLSX.utils.book_new()
+  appendSheets(wb, [buildDryExtractSheet(records)])
+  download(wb, '干浸出物')
+}
+
+/** 多类型汇总导出的数据集（仅包含需要导出的类型） */
+export interface CombinedExportData {
+  /** 绵白糖蔗糖分-5012 */
+  sucrose?: SucroseRecord[]
+  /** 红糖还原糖 */
+  reducing?: ReducingRecord[]
+  /** 还原糖（正/反滴） */
+  'reducing-titration'?: TitrationRecord[]
+  /** 总糖（正/反滴、蔗糖计） */
+  'total-sugar'?: TotalSugarRecord[]
+  /** 淀粉（1/2法、正/反滴） */
+  starch?: StarchRecord[]
+  /** 干浸出物（密度法） */
+  'dry-extract'?: DryExtractRecord[]
+}
+
+/**
+ * 多类型数据汇总导出：将各类型记录合并到同一个 Excel 文件。
+ * 一种类型的数据放到独立的 sheet，sheet 内列布局/公式与该类型单独导出完全一致
+ * （正/反滴等多模式类型按现有导出规则拆分为多个 sheet；
+ * 红糖还原糖附带"表2-f系数"查表页，供 K 列插值公式引用）。
+ * 文件名：单日 `数据导出_YYYYMMDD.xlsx`，跨日 `数据导出_YYYYMMDD-YYYYMMDD.xlsx`。
+ */
+export function exportCombinedHistory(
+  data: CombinedExportData,
+  dateRange?: { start: string; end: string },
+): void {
+  const specs: SheetSpec[] = []
+  if (data.sucrose?.length) specs.push(buildSucroseSheet(data.sucrose))
+  if (data.reducing?.length) specs.push(...buildReducingSheets(data.reducing))
+  if (data['reducing-titration']?.length)
+    specs.push(...buildTitrationSheets(data['reducing-titration']))
+  if (data['total-sugar']?.length) specs.push(...buildTotalSugarSheets(data['total-sugar']))
+  if (data.starch?.length) specs.push(...buildStarchSheets(data.starch))
+  if (data['dry-extract']?.length) specs.push(buildDryExtractSheet(data['dry-extract']))
+  if (specs.length === 0) return
+
+  const wb = XLSX.utils.book_new()
+  appendSheets(wb, specs)
+
+  let stamp = todayStamp()
+  if (dateRange) {
+    const s = dateRange.start.replaceAll('-', '')
+    const e = dateRange.end.replaceAll('-', '')
+    if (s && e) stamp = s === e ? s : `${s}-${e}`
+  }
+  XLSX.writeFile(wb, `数据导出_${stamp}.xlsx`)
+}
+
+/** 当天日期戳（YYYYMMDD，导出文件名用） */
+function todayStamp(): string {
   const d = new Date()
-  const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(
     d.getDate(),
   ).padStart(2, '0')}`
-  XLSX.writeFile(wb, `${baseName}_${stamp}.xlsx`)
+}
+
+/** 生成工作簿并触发下载（列宽已由各 buildXxxSheet 内部设置） */
+function download(wb: XLSX.WorkBook, baseName: string): void {
+  XLSX.writeFile(wb, `${baseName}_${todayStamp()}.xlsx`)
 }
 
 /** 按表头行设置列宽 */

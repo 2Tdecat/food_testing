@@ -7,14 +7,17 @@ import ReducingPanel, { type ReducingInitial } from '@/components/sugar/Reducing
 import TitrationPanel, { type TitrationInitial } from '@/components/sugar/TitrationPanel.vue'
 import TotalSugarPanel, { type TotalSugarInitial } from '@/components/sugar/TotalSugarPanel.vue'
 import StarchPanel, { type StarchInitial } from '@/components/sugar/StarchPanel.vue'
+import DryExtractPanel, { type DryExtractInitial } from '@/components/sugar/DryExtractPanel.vue'
 import {
   getRecord,
+  updateDryExtractRecord,
   updateReducingRecord,
   updateStarchRecord,
   updateSucroseRecord,
   updateTitrationRecord,
   updateTotalSugarRecord,
   type HistoryType,
+  type DryExtractRecord,
   type ReducingRecord,
   type StarchRecord,
   type SucroseRecord,
@@ -27,7 +30,11 @@ const router = useRouter()
 
 const type = computed<HistoryType>(() => {
   const t = String(route.params.type)
-  return t === 'reducing' || t === 'reducing-titration' || t === 'total-sugar' || t === 'starch'
+  return t === 'reducing' ||
+    t === 'reducing-titration' ||
+    t === 'total-sugar' ||
+    t === 'starch' ||
+    t === 'dry-extract'
     ? t
     : 'sucrose'
 })
@@ -39,6 +46,7 @@ const titles: Record<HistoryType, string> = {
   'reducing-titration': '还原糖（正/反滴）记录明细',
   'total-sugar': '总糖（正/反滴、蔗糖计）记录明细',
   starch: '淀粉（1/2法、正/反滴）记录明细',
+  'dry-extract': '干浸出物记录明细',
 }
 
 /** 路由参数变化时重新加载记录 */
@@ -75,6 +83,12 @@ const starchRecord = computed<StarchRecord | null>(() => {
   return getRecord('starch', id.value) as StarchRecord | null
 })
 
+const dryExtractRecord = computed<DryExtractRecord | null>(() => {
+  reloadKey.value
+  if (type.value !== 'dry-extract') return null
+  return getRecord('dry-extract', id.value) as DryExtractRecord | null
+})
+
 const notFound = computed(() => {
   reloadKey.value
   return (
@@ -82,7 +96,8 @@ const notFound = computed(() => {
     reducingRecord.value === null &&
     titrationRecord.value === null &&
     totalSugarRecord.value === null &&
-    starchRecord.value === null
+    starchRecord.value === null &&
+    dryExtractRecord.value === null
   )
 })
 
@@ -97,7 +112,8 @@ watch(
     reducingRecord.value ??
     titrationRecord.value ??
     totalSugarRecord.value ??
-    starchRecord.value,
+    starchRecord.value ??
+    dryExtractRecord.value,
   (r) => {
     sampleName.value = r?.sampleName ?? ''
     sampleNo.value = r?.sampleNo ?? ''
@@ -165,6 +181,17 @@ const starchInitial = computed<StarchInitial | undefined>(() =>
     : undefined,
 )
 
+const dryExtractInitial = computed<DryExtractInitial | undefined>(() =>
+  dryExtractRecord.value
+    ? {
+        totalSugar: dryExtractRecord.value.totalSugar,
+        reducingSugar: dryExtractRecord.value.reducingSugar,
+        roundResult: dryExtractRecord.value.roundResult,
+        runs: dryExtractRecord.value.runs,
+      }
+    : undefined,
+)
+
 /* ---------------- 面板引用 ---------------- */
 
 const sucroseRef = ref<InstanceType<typeof SucrosePanel>>()
@@ -172,6 +199,7 @@ const reducingRef = ref<InstanceType<typeof ReducingPanel>>()
 const titrationRef = ref<InstanceType<typeof TitrationPanel>>()
 const totalSugarRef = ref<InstanceType<typeof TotalSugarPanel>>()
 const starchRef = ref<InstanceType<typeof StarchPanel>>()
+const dryExtractRef = ref<InstanceType<typeof DryExtractPanel>>()
 
 /* ---------------- 保存修改 ---------------- */
 
@@ -216,6 +244,16 @@ function saveChanges() {
       sampleNo: sampleNo.value.trim(),
       ...starchRef.value.snapshot(),
     })
+  } else if (type.value === 'dry-extract') {
+    if (!dryExtractRef.value?.isComplete) {
+      Toast.warning('数据不完整，请先填写完平行样数据')
+      return
+    }
+    updateDryExtractRecord(id.value, {
+      sampleName: sampleName.value.trim(),
+      sampleNo: sampleNo.value.trim(),
+      ...dryExtractRef.value.snapshot(),
+    })
   } else {
     if (!titrationRef.value?.isComplete) {
       Toast.warning('数据不完整，请先填写完平行样数据')
@@ -237,17 +275,20 @@ function resetEdits() {
   titrationRef.value?.reset()
   totalSugarRef.value?.reset()
   starchRef.value?.reset()
+  dryExtractRef.value?.reset()
   if (sucroseInitial.value) sucroseRef.value?.load(sucroseInitial.value)
   if (reducingInitial.value) reducingRef.value?.load(reducingInitial.value)
   if (titrationInitial.value) titrationRef.value?.load(titrationInitial.value)
   if (totalSugarInitial.value) totalSugarRef.value?.load(totalSugarInitial.value)
   if (starchInitial.value) starchRef.value?.load(starchInitial.value)
+  if (dryExtractInitial.value) dryExtractRef.value?.load(dryExtractInitial.value)
   const record =
     sucroseRecord.value ??
     reducingRecord.value ??
     titrationRecord.value ??
     totalSugarRecord.value ??
-    starchRecord.value
+    starchRecord.value ??
+    dryExtractRecord.value
   sampleName.value = record?.sampleName ?? ''
   sampleNo.value = record?.sampleNo ?? ''
 }
@@ -316,7 +357,14 @@ function resetEdits() {
         />
 
         <!-- 淀粉（1/2法、正/反滴）明细 -->
-        <StarchPanel v-else ref="starchRef" :initial="starchInitial" />
+        <StarchPanel v-else-if="type === 'starch'" ref="starchRef" :initial="starchInitial" />
+
+        <!-- 干浸出物（密度法）明细 -->
+        <DryExtractPanel
+          v-else-if="type === 'dry-extract'"
+          ref="dryExtractRef"
+          :initial="dryExtractInitial"
+        />
 
         <div class="actions">
           <t-button block theme="primary" @click="saveChanges">保存修改</t-button>

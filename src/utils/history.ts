@@ -7,11 +7,18 @@
  * - 'reducing-titration'：还原糖（正/反滴）
  * - 'total-sugar'        ：总糖（正/反滴、蔗糖计）
  * - 'starch'             ：淀粉（1/2法、正/反滴）
+ * - 'dry-extract'        ：干浸出物（密度法）
  */
 
 import type { StarchMethod, StarchMode, TitrationMode, TotalSugarMode } from './sugarCalc'
 
-export type HistoryType = 'sucrose' | 'reducing' | 'reducing-titration' | 'total-sugar' | 'starch'
+export type HistoryType =
+  | 'sucrose'
+  | 'reducing'
+  | 'reducing-titration'
+  | 'total-sugar'
+  | 'starch'
+  | 'dry-extract'
 
 /** 蔗糖分测定记录 */
 export interface SucroseRunInput {
@@ -167,12 +174,41 @@ export interface StarchRecord {
   relErrorPct: number
 }
 
+/** 干浸出物（密度法）平行样输入 */
+export interface DryExtractRunInput {
+  densityOriginal: number | null
+  densityDistilled: number | null
+  totalExtract: number | null
+}
+
+/** 干浸出物（密度法）测定记录 */
+export interface DryExtractRecord {
+  id: string
+  savedAt: string
+  sampleName: string
+  sampleNo: string
+  /** 总糖（g/L，两平行样共享） */
+  totalSugar: number
+  /** 还原糖（g/L，两平行样共享） */
+  reducingSugar: number
+  /** 干浸出物结果是否保留 2 位小数（原表 ROUND(…,2) 公式变体） */
+  roundResult: boolean
+  runs: [DryExtractRunInput, DryExtractRunInput]
+  /** 各平行样干浸出物（g/L，与 runs 顺序对应） */
+  content: [number, number]
+  /** 平均值 */
+  avg: number
+  /** 误差（%，有符号） */
+  relErrorPct: number
+}
+
 const STORAGE_KEY: Record<HistoryType, string> = {
   sucrose: 'lab_history_sucrose',
   reducing: 'lab_history_reducing',
   'reducing-titration': 'lab_history_reducing_titration',
   'total-sugar': 'lab_history_total_sugar',
   starch: 'lab_history_starch',
+  'dry-extract': 'lab_history_dry_extract',
 }
 
 function genId(): string {
@@ -181,7 +217,13 @@ function genId(): string {
 
 export function loadHistory(
   type: HistoryType,
-): SucroseRecord[] | ReducingRecord[] | TitrationRecord[] | TotalSugarRecord[] | StarchRecord[] {
+):
+  | SucroseRecord[]
+  | ReducingRecord[]
+  | TitrationRecord[]
+  | TotalSugarRecord[]
+  | StarchRecord[]
+  | DryExtractRecord[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY[type])
     if (!raw) return []
@@ -240,6 +282,16 @@ export function addStarchRecord(record: Omit<StarchRecord, 'id' | 'savedAt'>): S
   return full
 }
 
+export function addDryExtractRecord(
+  record: Omit<DryExtractRecord, 'id' | 'savedAt'>,
+): DryExtractRecord {
+  const full: DryExtractRecord = { ...record, id: genId(), savedAt: new Date().toISOString() }
+  const list = loadHistory('dry-extract') as DryExtractRecord[]
+  list.unshift(full)
+  persist('dry-extract', list)
+  return full
+}
+
 export function deleteRecord(type: HistoryType, id: string): void {
   deleteRecords(type, [id])
 }
@@ -257,13 +309,21 @@ export function deleteRecords(type: HistoryType, ids: string[]): void {
 export function getRecord(
   type: HistoryType,
   id: string,
-): SucroseRecord | ReducingRecord | TitrationRecord | TotalSugarRecord | StarchRecord | null {
+):
+  | SucroseRecord
+  | ReducingRecord
+  | TitrationRecord
+  | TotalSugarRecord
+  | StarchRecord
+  | DryExtractRecord
+  | null {
   const list = loadHistory(type) as (
     | SucroseRecord
     | ReducingRecord
     | TitrationRecord
     | TotalSugarRecord
     | StarchRecord
+    | DryExtractRecord
   )[]
   return list.find((r) => r.id === id) ?? null
 }
@@ -335,6 +395,20 @@ export function updateStarchRecord(
   if (!old) return false
   list[idx] = { ...old, ...record, id, savedAt: old.savedAt }
   persist('starch', list)
+  return true
+}
+
+/** 更新干浸出物记录（保留原 id 与保存时间），未找到返回 false */
+export function updateDryExtractRecord(
+  id: string,
+  record: Omit<DryExtractRecord, 'id' | 'savedAt'>,
+): boolean {
+  const list = loadHistory('dry-extract') as DryExtractRecord[]
+  const idx = list.findIndex((r) => r.id === id)
+  const old = idx >= 0 ? list[idx] : undefined
+  if (!old) return false
+  list[idx] = { ...old, ...record, id, savedAt: old.savedAt }
+  persist('dry-extract', list)
   return true
 }
 

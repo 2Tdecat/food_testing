@@ -724,6 +724,178 @@ export function genStarchRun2(
   }
 }
 
+/* ---------------- 干浸出物（密度法，GB/T 15038-2006 第 4.3 章） ---------------- */
+
+/** 原液/蒸馏液密度（g/mL）：20℃ 密度瓶法测定，实验室现有数据约 0.94~1.10 */
+export const RULE_DE_DENSITY: ValidationRule = {
+  min: 0.9,
+  max: 1.2,
+  message: '密度应在 0.9~1.2 g/mL 之间',
+  warnMessage: '密度通常为 4 位小数（20℃ 密度瓶法）',
+}
+
+/** 总干浸出物（g/L）：由脱醇样密度查 GB/T 15038 附录 C 对照表所得 */
+export const RULE_DE_TOTAL_EXTRACT: ValidationRule = {
+  min: 0,
+  max: 500,
+  message: '总干浸出物应在 0~500 g/L 之间',
+}
+
+/** 总糖/还原糖（g/L） */
+export const RULE_DE_SUGAR: ValidationRule = {
+  min: 0,
+  max: 500,
+  message: '糖含量应在 0~500 g/L 之间',
+}
+
+/** 干浸出物平行样输入（单个平行样） */
+export interface DryExtractRunInput {
+  /** 原液密度（g/mL） */
+  densityOriginal: number | null
+  /** 蒸馏液密度（g/mL） */
+  densityDistilled: number | null
+  /** 总干浸出物（g/L，由脱醇样密度查表所得） */
+  totalExtract: number | null
+}
+
+/** 干浸出物共享输入 */
+export interface DryExtractSharedInput {
+  /** 总糖（g/L） */
+  totalSugar: number | null
+  /** 还原糖（g/L） */
+  reducingSugar: number | null
+  /**
+   * 干浸出物结果是否保留 2 位小数。
+   * 原 Excel"干浸出物"表存在两种公式形态：
+   * `=F-H-I`（多数行）与 `=ROUND(F-H-I,2)`（第 12~35 行），此处按记录保存以完整复现两表。
+   */
+  roundResult?: boolean
+}
+
+export interface DryExtractResult {
+  /** 脱醇样密度（g/mL，E 列） */
+  density: number
+  /** 蔗糖（g/L，I 列） */
+  sucrose: number
+  /** 干浸出物（g/L，J 列） */
+  dryExtract: number
+}
+
+/**
+ * 公式与实验室 Excel（15038糖11.xlsx"干浸出物"表）一致：
+ * - 脱醇样密度：ROUND(((原液密度×1000 − 蒸馏液密度×1000) + 1000)/1000, 4)
+ * - 蔗糖：(总糖 − 还原糖) × 0.95（不取整，与原表 I 列一致）
+ * - 干浸出物：总干浸出物 − 还原糖 − 蔗糖（默认不取整；roundResult 时保留 2 位小数）
+ */
+export function calcDryExtract(
+  input: DryExtractRunInput,
+  shared: DryExtractSharedInput,
+): DryExtractResult | null {
+  const { densityOriginal, densityDistilled, totalExtract } = input
+  const { totalSugar, reducingSugar } = shared
+  if (
+    densityOriginal === null ||
+    densityDistilled === null ||
+    totalExtract === null ||
+    totalSugar === null ||
+    reducingSugar === null
+  ) {
+    return null
+  }
+  const density = excelRound((densityOriginal * 1000 - densityDistilled * 1000 + 1000) / 1000, 4)
+  const sucrose = (totalSugar - reducingSugar) * 0.95
+  const raw = totalExtract - reducingSugar - sucrose
+  return { density, sucrose, dryExtract: shared.roundResult ? excelRound(raw, 2) : raw }
+}
+
+/** 干浸出物平行样统计 */
+export interface DryExtractStats {
+  /** 平均值 */
+  avg: number
+  /** 误差（%，(干浸出物₁ − 干浸出物₂)/平均 × 100，有符号） */
+  relErrorPct: number
+}
+
+/**
+ * 干浸出物精密度：重复性条件下两次独立测定结果的绝对差值
+ * 不得超过算术平均值的 2%（GB/T 15038-2006 4.3.5）。
+ */
+export const DRY_EXTRACT_PRECISION_LIMIT = 2
+
+/** 平行样平均值与误差；平均值为 0 时返回 null */
+export function dryExtractStats(c1: number, c2: number): DryExtractStats | null {
+  const avg = (c1 + c2) / 2
+  if (avg === 0) return null
+  return { avg, relErrorPct: ((c1 - c2) / avg) * 100 }
+}
+
+/**
+ * 依据平行样 1 生成干浸出物平行样 2 数据：
+ * - 原液/蒸馏液密度在 ±0.0005 g/mL 内微调，保留 4 位小数，钳位密度规则范围
+ * - 总干浸出物微调幅度受精密度约束（|Δ| ≤ 1.8% × |干浸出物₁|），
+ *   保留 1 位小数（查表值粒度），钳位 0~500 g/L；干浸出物绝对值过小
+ *   （<约 5.6 g/L）时无法在查表粒度内偏移，沿用平行样 1 的总干浸出物
+ * - 使两平行样干浸出物误差满足精密度（≤2%）
+ * 平行样 1 数据不完整时返回 null。
+ */
+export function genDryExtractRun2(
+  run1: DryExtractRunInput,
+  shared: DryExtractSharedInput,
+): DryExtractRunInput | null {
+  if (
+    run1.densityOriginal === null ||
+    run1.densityDistilled === null ||
+    run1.totalExtract === null ||
+    shared.totalSugar === null ||
+    shared.reducingSugar === null
+  ) {
+    return null
+  }
+  const c1 = calcDryExtract(run1, shared)
+  if (c1 === null) return null
+  // 密度对干浸出物无直接影响（仅经查表间接影响总干浸出物），误差由总干浸出物偏移决定
+  const span = Math.floor(Math.abs(c1.dryExtract) * 0.018 * 10) / 10
+
+  for (let i = 0; i < 20; i++) {
+    const densityOriginal = genDensity(run1.densityOriginal)
+    const densityDistilled = genDensity(run1.densityDistilled)
+    let delta = 0
+    if (span >= 0.1) delta = roundTo(rand(0.1, Math.min(span, 0.5)), 1)
+    const dir = Math.random() < 0.5 ? -1 : 1
+    const totalExtract = clamp(
+      roundTo(run1.totalExtract + dir * delta, 1),
+      RULE_DE_TOTAL_EXTRACT.min,
+      RULE_DE_TOTAL_EXTRACT.max,
+    )
+    const c2 = calcDryExtract({ densityOriginal, densityDistilled, totalExtract }, shared)
+    if (c2 !== null) {
+      const s = dryExtractStats(c1.dryExtract, c2.dryExtract)
+      if (s && Math.abs(s.relErrorPct) < DRY_EXTRACT_PRECISION_LIMIT) {
+        return { densityOriginal, densityDistilled, totalExtract }
+      }
+    }
+  }
+  // 兜底：总干浸出物直接沿用（误差为 0），密度仍微调
+  return {
+    densityOriginal: genDensity(run1.densityOriginal),
+    densityDistilled: genDensity(run1.densityDistilled),
+    totalExtract: roundTo(
+      clamp(run1.totalExtract, RULE_DE_TOTAL_EXTRACT.min, RULE_DE_TOTAL_EXTRACT.max),
+      1,
+    ),
+  }
+}
+
+/** 在中心值 ±0.0005 内生成 4 位小数的密度，钳位在密度规则范围内 */
+function genDensity(center: number): number {
+  for (let i = 0; i < 8; i++) {
+    const offset = roundTo(rand(-0.0005, 0.0005), 4)
+    const d = roundTo(clamp(center + offset, RULE_DE_DENSITY.min, RULE_DE_DENSITY.max), 4)
+    if (Math.abs(d - center) <= 0.0005) return d
+  }
+  return roundTo(clamp(center, RULE_DE_DENSITY.min, RULE_DE_DENSITY.max), 4)
+}
+
 /* ---------------- 平行样统计 ---------------- */
 
 export interface DuplicateStats {

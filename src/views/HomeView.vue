@@ -11,13 +11,25 @@ const filteredTools = computed(() => searchTools(keyword.value))
 function openTool(path: string) {
   router.push(path)
 }
+
+function openDataExport() {
+  router.push('/data-export')
+}
 </script>
 
 <template>
   <div class="page">
     <div class="home-header">
-      <div class="home-title">实验室工具</div>
-      <div class="home-subtitle">食品检测实验计算工具库</div>
+      <div class="home-header-main">
+        <div>
+          <div class="home-title">实验室工具</div>
+          <div class="home-subtitle">食品检测实验计算工具库</div>
+        </div>
+        <div class="home-export" @click="openDataExport">
+          <t-icon name="download" size="16px" />
+          <span>导出</span>
+        </div>
+      </div>
     </div>
 
     <div class="home-search">
@@ -61,6 +73,31 @@ function openTool(path: string) {
   padding: 28px 16px 12px;
   background: linear-gradient(135deg, #0052d9 0%, #2b6de8 100%);
   color: #fff;
+}
+
+.home-header-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.home-export {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 6px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 14px;
+  font-weight: 500;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.home-export:active {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .home-title {
