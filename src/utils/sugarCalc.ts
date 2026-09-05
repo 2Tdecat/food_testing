@@ -110,7 +110,11 @@ export const RULE_POLAR: ValidationRule = {
 }
 
 /** 干燥失重 Q */
-export const RULE_LOSS: ValidationRule = { min: 0, max: 15, message: '干燥失重应在 0~15 g/100g 之间' }
+export const RULE_LOSS: ValidationRule = {
+  min: 0,
+  max: 15,
+  message: '干燥失重应在 0~15 g/100g 之间',
+}
 
 /** 糖液温度 t */
 export const RULE_TEMP: ValidationRule = {
@@ -146,7 +150,11 @@ export const RULE_K: ValidationRule = {
 }
 
 /** 还原糖测定用蔗糖分 S */
-export const RULE_SUCROSE: ValidationRule = { min: 0, max: 100, message: '蔗糖分应在 0~100 g/100g 之间' }
+export const RULE_SUCROSE: ValidationRule = {
+  min: 0,
+  max: 100,
+  message: '蔗糖分应在 0~100 g/100g 之间',
+}
 
 /* ---------------- 蔗糖分（二次旋光法） ---------------- */
 
@@ -250,6 +258,470 @@ export function calcReducing(
   const { f, outOfRange } = lookupF(G1)
   const R = (1000 * f * k) / (m1 * V)
   return { V, m1, G1, f, fOutOfRange: outOfRange, R }
+}
+
+/* ---------------- 还原糖（正滴/反滴滴定） ---------------- */
+
+/** 滴定模式：direct=正滴（直接滴定），back=反滴（反滴定） */
+export type TitrationMode = 'direct' | 'back'
+
+/**
+ * 标定G量：滴定管读数（量程 50mL，参照滴定管规格）。
+ * 实验室现有数据约 11~12mL（见 糖.xlsx"还原糖正滴/反滴"表）。
+ */
+export const RULE_TITR_G: ValidationRule = {
+  min: 0,
+  max: 50,
+  message: '标定G量应在 0~50 之间（滴定管量程）',
+}
+
+/** 滴定称样量：实验室现有数据约 2~5g */
+export const RULE_TITR_MASS: ValidationRule = {
+  min: 0.1,
+  max: 60,
+  warnMin: 1,
+  warnMax: 20,
+  message: '称样量应在 0.1~60g 之间',
+  warnMessage: '常见称样量约 2~5g，可视还原糖含量高低增减',
+}
+
+/** 稀释倍数（正滴模式使用） */
+export const RULE_DILUTION: ValidationRule = {
+  min: 1,
+  max: 100,
+  warnMax: 10,
+  message: '稀释倍数应不小于 1',
+  warnMessage: '稀释倍数通常为 1、2、4 等较小的整数',
+}
+
+/** 还原糖滴定平行样输入（单个平行样） */
+export interface TitrationInput {
+  /** 称样量 m（g） */
+  mass: number | null
+  /** 滴定量 V（mL） */
+  volume: number | null
+}
+
+/** 还原糖滴定共享输入 */
+export interface TitrationSharedInput {
+  /** 滴定模式 */
+  mode: TitrationMode
+  /** 标定G量（mL） */
+  g: number | null
+  /** 稀释倍数（仅正滴模式使用） */
+  dilution: number | null
+  /**
+   * 定容体积（mL，仅正滴模式使用）：250（默认）或 100。
+   * 原 Excel 中 L 列以"定250"/"定100"标注，对应公式中的定容体积常数。
+   */
+  flaskVolume?: number | null
+}
+
+/** 正滴默认定容体积（mL），与原 Excel 绝大多数数据一致 */
+export const DEFAULT_FLASK_VOLUME = 250
+
+/**
+ * 糖含量（g/100g），公式与实验室 Excel（糖.xlsx）一致：
+ * - 正滴：ROUND(G量 × 100 × 稀释倍数 × 定容体积 / (称样量 × 滴定量 × 1000), 2)，
+ *   定容体积为 250（"定250"）或 100（"定100"）
+ * - 反滴：(G量 − 滴定量) × 250 × 100 / (称样量 × 10 × 1000)
+ * 250 为试样定容体积（mL）；1000 为 mg→g 换算。
+ */
+export function calcTitration(input: TitrationInput, shared: TitrationSharedInput): number | null {
+  const { mass, volume } = input
+  const { mode, g, dilution } = shared
+  if (mass === null || volume === null || g === null) return null
+  if (mass === 0 || volume === 0) return null
+  if (mode === 'direct') {
+    if (dilution === null) return null
+    const flask = shared.flaskVolume ?? DEFAULT_FLASK_VOLUME
+    return Math.round(((g * 100 * dilution * flask) / (mass * volume * 1000)) * 100) / 100
+  }
+  return ((g - volume) * 250 * 100) / (mass * 10 * 1000)
+}
+
+/** 还原糖滴定平行样统计（误差/质量差保留符号，与原 Excel 公式一致） */
+export interface TitrationStats {
+  /** 平均值 */
+  avg: number
+  /** 误差（%，(含量₁ − 含量₂)/平均 × 100，有符号） */
+  relErrorPct: number
+  /** 质量差（含量₁ − 含量₂，有符号） */
+  massDiff: number
+}
+
+/**
+ * 精密度要求：正滴（直接滴定法）≤5%、反滴 ≤10%。
+ * 依据 GB 5009.7-2016 精密度条款：第一法（直接滴定法）5%，其余方法 10%。
+ */
+export function titrationPrecisionLimit(mode: TitrationMode): number {
+  return mode === 'direct' ? 5 : 10
+}
+
+/** 平行样平均值/误差/质量差；平均值为 0 时返回 null */
+export function titrationStats(c1: number, c2: number): TitrationStats | null {
+  const avg = (c1 + c2) / 2
+  if (avg === 0) return null
+  return { avg, relErrorPct: ((c1 - c2) / avg) * 100, massDiff: c1 - c2 }
+}
+
+/** 还原糖滴定平行样数据 */
+export interface TitrationRunData {
+  mass: number | null
+  volume: number | null
+}
+
+/**
+ * 依据平行样 1 生成还原糖滴定平行样 2 数据：
+ * - 质量在 ±0.005g 内微调，钳位在称样量规则范围（0.1~60g）
+ * - 滴定量按 0.3%~5% 偏移，保留 2 位小数，钳位滴定管量程（0~50mL）；
+ *   反滴模式下滴定量还须小于标定G量（否则含量为负）
+ * - 使两平行样糖含量相对误差满足精密度（正滴 <5%，反滴 <10%）
+ * 平行样 1 数据不完整时返回 null。
+ */
+export function genTitrationRun2(
+  run1: TitrationRunData,
+  shared: TitrationSharedInput,
+): TitrationRunData | null {
+  if (run1.mass === null || run1.volume === null || shared.g === null) return null
+  if (shared.mode === 'direct' && shared.dilution === null) return null
+  if (run1.mass === 0 || run1.volume === 0) return null
+  const limit = titrationPrecisionLimit(shared.mode)
+
+  for (let i = 0; i < 20; i++) {
+    const mass2 = genMass(run1.mass, 0.005, RULE_TITR_MASS.min, RULE_TITR_MASS.max)
+    const dir = Math.random() < 0.5 ? -1 : 1
+    const v2 = clamp(
+      roundTo(run1.volume * (1 + dir * rand(0.003, 0.05)), 2),
+      RULE_VOLUME.min,
+      RULE_VOLUME.max,
+    )
+    if (v2 <= 0) continue
+    // 反滴模式滴定量必须小于标定G量，否则糖含量为负
+    if (shared.mode === 'back' && v2 >= shared.g) continue
+    const c1 = calcTitration(run1, shared)
+    const c2 = calcTitration({ mass: mass2, volume: v2 }, shared)
+    if (c1 !== null && c2 !== null) {
+      const s = titrationStats(c1, c2)
+      if (s && Math.abs(s.relErrorPct) < limit) {
+        return { mass: mass2, volume: v2 }
+      }
+    }
+  }
+  // 兜底：滴定量直接沿用
+  return {
+    mass: genMass(run1.mass, 0.005, RULE_TITR_MASS.min, RULE_TITR_MASS.max),
+    volume: clamp(roundTo(run1.volume, 2), RULE_VOLUME.min, RULE_VOLUME.max),
+  }
+}
+
+/* ---------------- 总糖（正/反滴，可选蔗糖计） ---------------- */
+
+/** 总糖滴定模式：direct=正滴（直接滴定），back=反滴（反滴定） */
+export type TotalSugarMode = 'direct' | 'back'
+
+/** 总糖默认定容体积（mL），原 Excel 绝大多数数据为 250，少数为 200 */
+export const TOTAL_SUGAR_DEFAULT_FLASK = 250
+
+/** 总糖滴定平行样输入（单个平行样） */
+export interface TotalSugarInput {
+  /** 称样量 m（g） */
+  mass: number | null
+  /** 滴定量 V（mL） */
+  volume: number | null
+}
+
+/** 总糖滴定共享输入 */
+export interface TotalSugarSharedInput {
+  /** 滴定模式 */
+  mode: TotalSugarMode
+  /** 是否启用蔗糖计（×0.95，对应原 Excel 带"（蔗糖计）"的表） */
+  sucroseBasis: boolean
+  /** 标定G量（mL） */
+  g: number | null
+  /** 稀释倍数（仅正滴模式使用） */
+  dilution: number | null
+  /** 定容体积（mL）：250（默认）或 200 */
+  flaskVolume?: number | null
+}
+
+/**
+ * 模拟 Excel ROUND 的十进制舍入（半值远离零）：
+ * 先以 toPrecision(15) 消除浮点噪声（如 92.44999999999999 → 92.45），
+ * 再按绝对值四舍五入，避免 JS Math.round 的二进制半值偏差。
+ */
+function excelRound(v: number, digits: number): number {
+  if (!Number.isFinite(v)) return v
+  const p = Number(Math.abs(v).toPrecision(15))
+  const f = 10 ** digits
+  const r = Math.round(p * f + Number.EPSILON * f) / f
+  return v < 0 ? -r : r
+}
+
+/**
+ * 总糖含量（g/100g），公式与实验室 Excel（糖.xlsx）四表一致：
+ * - 正滴：ROUND(G量 × 100 × 稀释倍数 × 定容 × 100 / (50 × 称样量 × 滴定量 × 1000), 2)
+ * - 正滴（蔗糖计）：ROUND(G量 × 100 × 稀释倍数 × 100 × 定容 / (称样量 × 滴定量 × 50 × 1000) × 0.95, 2)
+ * - 反滴：(G量 − 滴定量) × 定容 × 100 × 100 / (称样量 × 10 × 1000 × 50)
+ * - 反滴（蔗糖计）：(G量 − 滴定量) × 定容 × 100 × 0.95 × 100 / (50 × 称样量 × 10 × 1000)
+ * 正滴保留 2 位小数，反滴不取整（与原表一致）。
+ */
+export function calcTotalSugar(
+  input: TotalSugarInput,
+  shared: TotalSugarSharedInput,
+): number | null {
+  const { mass, volume } = input
+  const { mode, sucroseBasis, g, dilution } = shared
+  if (mass === null || volume === null || g === null) return null
+  if (mass === 0 || volume === 0) return null
+  const flask = shared.flaskVolume ?? TOTAL_SUGAR_DEFAULT_FLASK
+  if (mode === 'direct') {
+    if (dilution === null) return null
+    if (sucroseBasis) {
+      return excelRound(((g * 100 * dilution * 100 * flask) / mass / volume / 50 / 1000) * 0.95, 2)
+    }
+    return excelRound((g * 100 * dilution * flask * 100) / 50 / mass / volume / 1000, 2)
+  }
+  if (sucroseBasis) {
+    return ((g - volume) * flask * 100 * 0.95 * 100) / 50 / mass / 10 / 1000
+  }
+  return ((g - volume) * flask * 100 * 100) / mass / 10 / 1000 / 50
+}
+
+/** 总糖平行样统计 */
+export interface TotalSugarStats {
+  /** 平均值 */
+  avg: number
+  /** 误差（%，有符号） */
+  relErrorPct: number
+  /** 质量差（有符号） */
+  massDiff: number
+}
+
+/**
+ * 总糖平行样统计，取整规则与原 Excel 四表一致：
+ * - 正滴（含蔗糖计）：平均值 ROUND(…,1)；误差 = (含量₁−含量₂)×100/取整后平均值（不取整）；
+ *   质量差 = 含量₂ − 含量₁（原表 L 列公式 H'−H）
+ * - 反滴：平均值不取整；误差 ROUND(…,1)；质量差 = 含量₁ − 含量₂（原表 J 列公式 G−G'）
+ * - 反滴（蔗糖计）：平均值/误差均不取整
+ * 平均值为 0 时返回 null。
+ */
+export function totalSugarStats(
+  mode: TotalSugarMode,
+  sucroseBasis: boolean,
+  c1: number,
+  c2: number,
+): TotalSugarStats | null {
+  const avg = (c1 + c2) / 2
+  if (avg === 0) return null
+  const rawErr = ((c1 - c2) * 100) / avg
+  if (mode === 'direct') {
+    // 正滴表 I 列为 ROUND(…,1)，J 列误差除以取整后的平均值
+    const avgR = excelRound(avg, 1)
+    if (avgR === 0) return null
+    return { avg: avgR, relErrorPct: ((c1 - c2) * 100) / avgR, massDiff: c2 - c1 }
+  }
+  if (sucroseBasis) {
+    return { avg, relErrorPct: rawErr, massDiff: c1 - c2 }
+  }
+  return { avg, relErrorPct: excelRound(rawErr, 1), massDiff: c1 - c2 }
+}
+
+/** 总糖滴定平行样数据 */
+export interface TotalSugarRunData {
+  mass: number | null
+  volume: number | null
+}
+
+/**
+ * 依据平行样 1 生成总糖平行样 2 数据：
+ * - 质量在 ±0.005g 内微调，钳位在称样量规则范围（0.1~60g）
+ * - 滴定量按 0.3%~5% 偏移，保留 2 位小数，钳位滴定管量程（0~50mL）；
+ *   反滴模式下滴定量还须小于标定G量（否则含量为负）
+ * - 使两平行样含量误差满足精密度（正滴 <5%，反滴 <10%）
+ * 平行样 1 数据不完整时返回 null。
+ */
+export function genTotalSugarRun2(
+  run1: TotalSugarRunData,
+  shared: TotalSugarSharedInput,
+): TotalSugarRunData | null {
+  if (run1.mass === null || run1.volume === null || shared.g === null) return null
+  if (shared.mode === 'direct' && shared.dilution === null) return null
+  if (run1.mass === 0 || run1.volume === 0) return null
+  const limit = titrationPrecisionLimit(shared.mode)
+
+  for (let i = 0; i < 20; i++) {
+    const mass2 = genMass(run1.mass, 0.005, RULE_TITR_MASS.min, RULE_TITR_MASS.max)
+    const dir = Math.random() < 0.5 ? -1 : 1
+    const v2 = clamp(
+      roundTo(run1.volume * (1 + dir * rand(0.003, 0.05)), 2),
+      RULE_VOLUME.min,
+      RULE_VOLUME.max,
+    )
+    if (v2 <= 0) continue
+    if (shared.mode === 'back' && v2 >= shared.g) continue
+    const c1 = calcTotalSugar(run1, shared)
+    const c2 = calcTotalSugar({ mass: mass2, volume: v2 }, shared)
+    if (c1 !== null && c2 !== null) {
+      const s = totalSugarStats(shared.mode, shared.sucroseBasis, c1, c2)
+      if (s && Math.abs(s.relErrorPct) < limit) {
+        return { mass: mass2, volume: v2 }
+      }
+    }
+  }
+  // 兜底：滴定量直接沿用
+  return {
+    mass: genMass(run1.mass, 0.005, RULE_TITR_MASS.min, RULE_TITR_MASS.max),
+    volume: clamp(roundTo(run1.volume, 2), RULE_VOLUME.min, RULE_VOLUME.max),
+  }
+}
+
+/* ---------------- 淀粉（1/2法、正/反滴） ---------------- */
+
+/** 淀粉滴定模式：direct=正滴（直接滴定），back=反滴（反滴定） */
+export type StarchMode = 'direct' | 'back'
+
+/** 淀粉测定方法：1=一法（原表"淀粉一法/淀粉1法反滴"），2=二法（原表"淀粉二法/淀粉2反滴"） */
+export type StarchMethod = 1 | 2
+
+/** 淀粉默认定容体积（mL），原 Excel 绝大多数数据为 250 */
+export const STARCH_DEFAULT_FLASK = 250
+
+/** 淀粉滴定平行样输入（单个平行样） */
+export interface StarchInput {
+  /** 称样量 m（g） */
+  mass: number | null
+  /** 滴定量 V（mL） */
+  volume: number | null
+}
+
+/** 淀粉滴定共享输入 */
+export interface StarchSharedInput {
+  /** 滴定模式 */
+  mode: StarchMode
+  /** 测定方法：1=一法，2=二法 */
+  method: StarchMethod
+  /** 标定G量（mL） */
+  g: number | null
+  /** 稀释倍数（正滴两法与反滴2法使用，反滴1法不使用） */
+  dilution: number | null
+  /** 定容体积（mL）：正滴 250/200，反滴1法固定 250，反滴2法 250/500 */
+  flaskVolume?: number | null
+}
+
+/**
+ * 淀粉含量（g/100g），公式与实验室 Excel（糖.xlsx）四个淀粉表一致：
+ * - 淀粉一法（正滴）：ROUND(G量 × 100 × 稀释 × 定容 × 100 × 0.9 / (50 × 称样量 × 滴定量 × 1000), 2)
+ * - 淀粉二法（正滴）：G量 × 100 × 稀释 × 定容 × 0.9 / (称样量 × 滴定量 × 1000)，不取整
+ * - 淀粉1法反滴：(G量 − 滴定量) × 250 × 100 × 100 × 0.9 / (称样量 × 10 × 1000 × 50)，
+ *   定容固定 250，不取整
+ * - 淀粉2反滴：(G量 − 滴定量) × 定容 × 100 × 稀释 × 0.9 / (称样量 × 10 × 1000)，不取整
+ */
+export function calcStarch(input: StarchInput, shared: StarchSharedInput): number | null {
+  const { mass, volume } = input
+  const { mode, method, g, dilution } = shared
+  if (mass === null || volume === null || g === null) return null
+  if (mass === 0 || volume === 0) return null
+  if (mode === 'direct') {
+    if (dilution === null) return null
+    const flask = shared.flaskVolume ?? STARCH_DEFAULT_FLASK
+    if (method === 1) {
+      return excelRound((g * 100 * dilution * flask * 100 * 0.9) / 50 / mass / volume / 1000, 2)
+    }
+    return (g * 100 * dilution * flask * 0.9) / mass / volume / 1000
+  }
+  if (method === 1) {
+    return ((g - volume) * 250 * 100 * 100 * 0.9) / mass / 10 / 1000 / 50
+  }
+  if (dilution === null) return null
+  const flask = shared.flaskVolume ?? STARCH_DEFAULT_FLASK
+  return ((g - volume) * flask * 100 * dilution * 0.9) / mass / 10 / 1000
+}
+
+/** 淀粉平行样统计 */
+export interface StarchStats {
+  /** 平均值 */
+  avg: number
+  /** 误差（%，有符号） */
+  relErrorPct: number
+}
+
+/**
+ * 淀粉平行样统计，取整规则与原 Excel 四表一致：
+ * - 淀粉一法：平均值 ROUND(…,1)；误差 = (含量₁−含量₂)×100/取整后平均值（不取整）
+ * - 淀粉二法 / 淀粉2反滴：平均值、误差均不取整
+ * - 淀粉1法反滴：平均值不取整；误差 ROUND(…,1)
+ * 平均值为 0 时返回 null。
+ */
+export function starchStats(
+  mode: StarchMode,
+  method: StarchMethod,
+  c1: number,
+  c2: number,
+): StarchStats | null {
+  const avg = (c1 + c2) / 2
+  if (avg === 0) return null
+  if (mode === 'direct' && method === 1) {
+    // 一法表 H 列为 ROUND(…,1)，I 列误差除以取整后的平均值
+    const avgR = excelRound(avg, 1)
+    if (avgR === 0) return null
+    return { avg: avgR, relErrorPct: ((c1 - c2) * 100) / avgR }
+  }
+  if (mode === 'back' && method === 1) {
+    return { avg, relErrorPct: excelRound(((c1 - c2) * 100) / avg, 1) }
+  }
+  return { avg, relErrorPct: ((c1 - c2) * 100) / avg }
+}
+
+/** 淀粉滴定平行样数据 */
+export interface StarchRunData {
+  mass: number | null
+  volume: number | null
+}
+
+/**
+ * 依据平行样 1 生成淀粉平行样 2 数据：
+ * - 质量在 ±0.005g 内微调，钳位在称样量规则范围（0.1~60g）
+ * - 滴定量按 0.3%~5% 偏移，保留 2 位小数，钳位滴定管量程（0~50mL）；
+ *   反滴模式下滴定量还须小于标定G量（否则含量为负）
+ * - 使两平行样含量误差满足精密度（正滴 <5%，反滴 <10%）
+ * 平行样 1 数据不完整时返回 null。
+ */
+export function genStarchRun2(
+  run1: StarchRunData,
+  shared: StarchSharedInput,
+): StarchRunData | null {
+  if (run1.mass === null || run1.volume === null || shared.g === null) return null
+  const needsDilution = shared.mode === 'direct' || (shared.mode === 'back' && shared.method === 2)
+  if (needsDilution && shared.dilution === null) return null
+  if (run1.mass === 0 || run1.volume === 0) return null
+  const limit = titrationPrecisionLimit(shared.mode)
+
+  for (let i = 0; i < 20; i++) {
+    const mass2 = genMass(run1.mass, 0.005, RULE_TITR_MASS.min, RULE_TITR_MASS.max)
+    const dir = Math.random() < 0.5 ? -1 : 1
+    const v2 = clamp(
+      roundTo(run1.volume * (1 + dir * rand(0.003, 0.05)), 2),
+      RULE_VOLUME.min,
+      RULE_VOLUME.max,
+    )
+    if (v2 <= 0) continue
+    // 反滴模式滴定量必须小于标定G量，否则含量为负
+    if (shared.mode === 'back' && v2 >= shared.g) continue
+    const c1 = calcStarch(run1, shared)
+    const c2 = calcStarch({ mass: mass2, volume: v2 }, shared)
+    if (c1 !== null && c2 !== null) {
+      const s = starchStats(shared.mode, shared.method, c1, c2)
+      if (s && Math.abs(s.relErrorPct) < limit) {
+        return { mass: mass2, volume: v2 }
+      }
+    }
+  }
+  // 兜底：滴定量直接沿用
+  return {
+    mass: genMass(run1.mass, 0.005, RULE_TITR_MASS.min, RULE_TITR_MASS.max),
+    volume: clamp(roundTo(run1.volume, 2), RULE_VOLUME.min, RULE_VOLUME.max),
+  }
 }
 
 /* ---------------- 平行样统计 ---------------- */
@@ -387,7 +859,11 @@ export function genReducingRun2(
     const mass2 = genMass(run1.mass, 0.005, RULE_RED_MASS.min, RULE_RED_MASS.max)
     // 目标相对误差 0.3%~5%，留足余量保证 < 15%
     const dir = Math.random() < 0.5 ? -1 : 1
-    const v2 = clamp(roundTo(run1.v1 * (1 + dir * rand(0.003, 0.05)), 2), RULE_VOLUME.min, RULE_VOLUME.max)
+    const v2 = clamp(
+      roundTo(run1.v1 * (1 + dir * rand(0.003, 0.05)), 2),
+      RULE_VOLUME.min,
+      RULE_VOLUME.max,
+    )
     if (v2 <= 0) continue
     const r1 = calcReducing(run1, shared)?.R
     const r2 = calcReducing({ mass: mass2, v1: v2 }, shared)?.R
@@ -407,7 +883,11 @@ export function genReducingRun2(
 
 /** 在中心值 ±span 内生成 4 位小数的称样质量，钳位在 [lo, hi] 范围内（调用方按需传误差范围或建议范围） */
 function genMass(center: number, span: number, lo: number, hi: number): number {
-  // 偏移方向随机，避免单侧漂移
-  const offset = rand(-span, span)
-  return roundTo(clamp(center + offset, lo, hi), 4)
+  // 偏移方向随机，避免单侧漂移；保留 4 位小数后须仍在 ±span 内，否则重试
+  for (let i = 0; i < 8; i++) {
+    const offset = roundTo(rand(-span, span), 4)
+    const m = roundTo(clamp(center + offset, lo, hi), 4)
+    if (Math.abs(m - center) <= span) return m
+  }
+  return roundTo(clamp(center, lo, hi), 4)
 }

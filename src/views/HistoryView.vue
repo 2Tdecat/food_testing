@@ -11,9 +11,18 @@ import {
   loadHistory,
   type HistoryType,
   type ReducingRecord,
+  type StarchRecord,
   type SucroseRecord,
+  type TitrationRecord,
+  type TotalSugarRecord,
 } from '@/utils/history'
-import { exportReducingHistory, exportSucroseHistory } from '@/utils/exportExcel'
+import {
+  exportReducingHistory,
+  exportStarchHistory,
+  exportSucroseHistory,
+  exportTitrationHistory,
+  exportTotalSugarHistory,
+} from '@/utils/exportExcel'
 
 interface RecordGridCell {
   k: string
@@ -24,21 +33,29 @@ interface RecordGridCell {
 const route = useRoute()
 const router = useRouter()
 
-const type = computed<HistoryType>(() =>
-  route.params.type === 'reducing' ? 'reducing' : 'sucrose',
-)
+const type = computed<HistoryType>(() => {
+  const t = String(route.params.type)
+  return t === 'reducing' || t === 'reducing-titration' || t === 'total-sugar' || t === 'starch'
+    ? t
+    : 'sucrose'
+})
 
 const titles: Record<HistoryType, string> = {
   sucrose: '蔗糖分历史记录',
   reducing: '还原糖历史记录',
+  'reducing-titration': '还原糖（正/反滴）历史记录',
+  'total-sugar': '总糖（正/反滴、蔗糖计）历史记录',
+  starch: '淀粉（1/2法、正/反滴）历史记录',
 }
 
 /** 刷新列表用的响应式触发器 */
 const version = ref(0)
 
-const records = computed<(SucroseRecord | ReducingRecord)[]>(() => {
+type AnyRecord = SucroseRecord | ReducingRecord | TitrationRecord | TotalSugarRecord | StarchRecord
+
+const records = computed<AnyRecord[]>(() => {
   version.value
-  return loadHistory(type.value) as (SucroseRecord | ReducingRecord)[]
+  return loadHistory(type.value) as AnyRecord[]
 })
 
 /* ---------------- 按日期分组（年-月-日） ---------------- */
@@ -52,11 +69,11 @@ const todayKey = computed(() => {
 
 interface RecordGroup {
   date: string
-  items: (SucroseRecord | ReducingRecord)[]
+  items: AnyRecord[]
 }
 
 const groups = computed<RecordGroup[]>(() => {
-  const map = new Map<string, (SucroseRecord | ReducingRecord)[]>()
+  const map = new Map<string, AnyRecord[]>()
   for (const r of records.value) {
     const key = formatDateKey(r.savedAt)
     const arr = map.get(key) ?? []
@@ -135,9 +152,7 @@ function toggleGroupSelect(date: string) {
 
 const selectedCount = computed(() => selected.value.size)
 const totalCount = computed(() => records.value.length)
-const allSelected = computed(
-  () => totalCount.value > 0 && selectedCount.value === totalCount.value,
-)
+const allSelected = computed(() => totalCount.value > 0 && selectedCount.value === totalCount.value)
 
 /** 全选 / 全不选 */
 function toggleSelectAll() {
@@ -152,7 +167,7 @@ function fmt(v: number): string {
   return String(Number(v.toPrecision(4)))
 }
 
-function gridCells(r: SucroseRecord | ReducingRecord): RecordGridCell[] {
+function gridCells(r: AnyRecord): RecordGridCell[] {
   if (type.value === 'sucrose') {
     const s = r as SucroseRecord
     return [
@@ -162,13 +177,60 @@ function gridCells(r: SucroseRecord | ReducingRecord): RecordGridCell[] {
       { k: '相对误差', v: `${fmt(s.relErrorPct)}%`, bad: s.relErrorPct > 0.05 },
     ]
   }
-  const d = r as ReducingRecord
+  if (type.value === 'reducing') {
+    const d = r as ReducingRecord
+    return [
+      { k: 'R₁', v: fmt(d.calc[0].R) },
+      { k: 'R₂', v: fmt(d.calc[1].R) },
+      { k: '平均值', v: fmt(d.avg) },
+      { k: '相对误差', v: `${fmt(d.relErrorPct)}%`, bad: d.relErrorPct > 15 },
+    ]
+  }
+  if (type.value === 'total-sugar') {
+    const t = r as TotalSugarRecord
+    const limit = t.mode === 'direct' ? 5 : 10
+    return [
+      { k: '含量₁', v: fmt(t.content[0]) },
+      { k: '含量₂', v: fmt(t.content[1]) },
+      { k: '平均值', v: fmt(t.avg) },
+      { k: '相对误差', v: `${fmt(t.relErrorPct)}%`, bad: Math.abs(t.relErrorPct) > limit },
+    ]
+  }
+  if (type.value === 'starch') {
+    const t = r as StarchRecord
+    const limit = t.mode === 'direct' ? 5 : 10
+    return [
+      { k: '含量₁', v: fmt(t.content[0]) },
+      { k: '含量₂', v: fmt(t.content[1]) },
+      { k: '平均值', v: fmt(t.avg) },
+      { k: '相对误差', v: `${fmt(t.relErrorPct)}%`, bad: Math.abs(t.relErrorPct) > limit },
+    ]
+  }
+  const t = r as TitrationRecord
+  const limit = t.mode === 'direct' ? 5 : 10
   return [
-    { k: 'R₁', v: fmt(d.calc[0].R) },
-    { k: 'R₂', v: fmt(d.calc[1].R) },
-    { k: '平均值', v: fmt(d.avg) },
-    { k: '相对误差', v: `${fmt(d.relErrorPct)}%`, bad: d.relErrorPct > 15 },
+    { k: '含量₁', v: fmt(t.content[0]) },
+    { k: '含量₂', v: fmt(t.content[1]) },
+    { k: '平均值', v: fmt(t.avg) },
+    { k: '相对误差', v: `${fmt(t.relErrorPct)}%`, bad: Math.abs(t.relErrorPct) > limit },
   ]
+}
+
+/** 滴定模式标签（还原糖/总糖/淀粉正反滴记录卡片显示，正滴附定容体积） */
+function titrationModeLabel(r: AnyRecord): string {
+  if (type.value === 'total-sugar') {
+    const t = r as TotalSugarRecord
+    const flask = t.mode === 'direct' && t.flaskVolume === 200 ? '·定200' : ''
+    return `${t.mode === 'direct' ? '正滴' : '反滴'}${flask}${t.sucroseBasis ? '·蔗糖计' : ''}`
+  }
+  if (type.value === 'starch') {
+    const t = r as StarchRecord
+    const flask = t.flaskVolume === 200 || t.flaskVolume === 500 ? `·定${t.flaskVolume}` : ''
+    return `${t.method === 1 ? '1法' : '2法'}·${t.mode === 'direct' ? '正滴' : '反滴'}${flask}`
+  }
+  const t = r as TitrationRecord
+  if (t.mode !== 'direct') return '反滴'
+  return t.flaskVolume === 100 ? '正滴·定100' : '正滴'
 }
 
 /* ---------------- 操作 ---------------- */
@@ -220,8 +282,14 @@ function onBatchExport() {
   const sel = records.value.filter((r) => selected.value.has(r.id))
   if (type.value === 'sucrose') {
     exportSucroseHistory(sel as SucroseRecord[])
-  } else {
+  } else if (type.value === 'reducing') {
     exportReducingHistory(sel as ReducingRecord[])
+  } else if (type.value === 'total-sugar') {
+    exportTotalSugarHistory(sel as TotalSugarRecord[])
+  } else if (type.value === 'starch') {
+    exportStarchHistory(sel as StarchRecord[])
+  } else {
+    exportTitrationHistory(sel as TitrationRecord[])
   }
 }
 
@@ -233,8 +301,14 @@ function onExport() {
   }
   if (type.value === 'sucrose') {
     exportSucroseHistory(records.value as SucroseRecord[])
-  } else {
+  } else if (type.value === 'reducing') {
     exportReducingHistory(records.value as ReducingRecord[])
+  } else if (type.value === 'total-sugar') {
+    exportTotalSugarHistory(records.value as TotalSugarRecord[])
+  } else if (type.value === 'starch') {
+    exportStarchHistory(records.value as StarchRecord[])
+  } else {
+    exportTitrationHistory(records.value as TitrationRecord[])
   }
 }
 
@@ -308,6 +382,13 @@ const navTitle = computed(() =>
                 @click.stop="toggleSelect(r.id)"
               />
               <div class="record-title">
+                <span
+                  v-if="
+                    type === 'reducing-titration' || type === 'total-sugar' || type === 'starch'
+                  "
+                  class="record-mode"
+                  >{{ titrationModeLabel(r) }}</span
+                >
                 <span v-if="r.sampleName" class="record-sample">{{ r.sampleName }}</span>
                 <span v-if="r.sampleNo" class="record-no">{{ r.sampleNo }}</span>
                 <span v-if="!r.sampleName && !r.sampleNo" class="record-no">未填写样品信息</span>
@@ -416,7 +497,6 @@ const navTitle = computed(() =>
   padding: 12px 8px;
   margin-bottom: 12px;
   border: 1px solid transparent;
-
 }
 
 .record-card.clickable {
@@ -453,6 +533,16 @@ const navTitle = computed(() =>
 .record-no {
   font-size: 13px;
   color: var(--td-text-color-secondary, rgba(0, 0, 0, 0.55));
+}
+
+/* 滴定模式标签（正滴/反滴） */
+.record-mode {
+  font-size: 11px;
+  color: var(--lab-primary, #0052d9);
+  background: rgba(0, 82, 217, 0.06);
+  border-radius: 4px;
+  padding: 1px 6px;
+  flex-shrink: 0;
 }
 
 /* 删除热区：扩大点击范围，避免误触卡片跳详情 */
@@ -525,15 +615,15 @@ const navTitle = computed(() =>
   flex: 1;
 }
 
-.t-checkbox--block{
-padding: 0;
-background: transparent;
+.t-checkbox--block {
+  padding: 0;
+  background: transparent;
 }
 
-.date-group{
-background: white;
-border-radius: 8px;
-padding: 0 8px;
-margin-bottom: 12px;
+.date-group {
+  background: white;
+  border-radius: 8px;
+  padding: 0 8px;
+  margin-bottom: 12px;
 }
 </style>

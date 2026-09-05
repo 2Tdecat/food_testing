@@ -21,13 +21,31 @@ const router = createRouter({
       component: () => import('../views/ReducingCalcView.vue'),
     },
     {
-      // 历史记录列表（type: sucrose | reducing）
+      // 还原糖（正/反滴）独立计算
+      path: '/tools/reducing-titration',
+      name: 'reducing-titration',
+      component: () => import('../views/TitrationCalcView.vue'),
+    },
+    {
+      // 总糖（正/反滴、蔗糖计）独立计算
+      path: '/tools/total-sugar',
+      name: 'total-sugar',
+      component: () => import('../views/TotalSugarCalcView.vue'),
+    },
+    {
+      // 淀粉（1/2法、正/反滴）独立计算
+      path: '/tools/starch',
+      name: 'starch',
+      component: () => import('../views/StarchCalcView.vue'),
+    },
+    {
+      // 历史记录列表（type: sucrose | reducing | reducing-titration | total-sugar | starch）
       path: '/tools/history/:type',
       name: 'history',
       component: () => import('../views/HistoryView.vue'),
     },
     {
-      // 历史记录明细/编辑（type: sucrose | reducing）
+      // 历史记录明细/编辑（type: sucrose | reducing | reducing-titration | total-sugar | starch）
       path: '/tools/history/:type/:id',
       name: 'history-detail',
       component: () => import('../views/HistoryDetailView.vue'),

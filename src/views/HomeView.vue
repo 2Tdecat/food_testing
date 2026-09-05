@@ -21,11 +21,7 @@ function openTool(path: string) {
     </div>
 
     <div class="home-search">
-      <t-search
-        v-model="keyword"
-        placeholder="搜索功能，如：糖分、蔗糖、还原糖"
-        :center="false"
-      />
+      <t-search v-model="keyword" placeholder="搜索功能，如：糖分、蔗糖、还原糖" :center="false" />
     </div>
 
     <div class="tool-section">
@@ -55,11 +51,7 @@ function openTool(path: string) {
         </t-cell>
       </t-cell-group>
 
-      <t-empty
-        v-if="filteredTools.length === 0"
-        description="未找到相关功能"
-        class="tool-empty"
-      />
+      <t-empty v-if="filteredTools.length === 0" description="未找到相关功能" class="tool-empty" />
     </div>
   </div>
 </template>

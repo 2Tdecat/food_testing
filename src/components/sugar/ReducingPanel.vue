@@ -14,10 +14,7 @@ import {
 export interface ReducingInitial {
   sucrose: number | null
   k: number | null
-  runs: [
-    { mass: number | null; v1: number | null },
-    { mass: number | null; v1: number | null },
-  ]
+  runs: [{ mass: number | null; v1: number | null }, { mass: number | null; v1: number | null }]
 }
 
 const props = defineProps<{
@@ -81,10 +78,7 @@ function genRun2() {
     { mass: run1.mass, v1: run1.v1 },
     { sucrose: sucrose.value, k: k.value },
   )
-  Object.assign(
-    run2,
-    g ?? { mass: null, v1: null },
-  )
+  Object.assign(run2, g ?? { mass: null, v1: null })
 }
 
 /* 平行样 1 / 共享变量变化时自动生成平行样 2（结果误差 < 15%） */
@@ -154,13 +148,9 @@ function sig(v: number | null | undefined): string {
 
 /* ---------------- 公式文本 ---------------- */
 
-const v1Line = computed(() =>
-  res1.value ? `V₁ = ${fmt(run1.v1)} mL` : 'V₁ = --',
-)
+const v1Line = computed(() => (res1.value ? `V₁ = ${fmt(run1.v1)} mL` : 'V₁ = --'))
 
-const v2Line = computed(() =>
-  res2.value ? `V₂ = ${fmt(run2.v1)} mL` : 'V₂ = --',
-)
+const v2Line = computed(() => (res2.value ? `V₂ = ${fmt(run2.v1)} mL` : 'V₂ = --'))
 
 const m1Line = computed(() =>
   res1.value ? `m₁ = ${fmt(run1.mass)} × 100 / 200 = ${fmt(res1.value.m1)} g` : 'm₁ = --',
@@ -203,7 +193,9 @@ const avgLine = computed(() =>
 )
 
 const errLine = computed(() =>
-  stats.value ? `相对误差 = |R₁ − R₂| / R̄ × 100 = ${fmt(stats.value.relErrorPct)}%` : '相对误差 = --',
+  stats.value
+    ? `相对误差 = |R₁ − R₂| / R̄ × 100 = ${fmt(stats.value.relErrorPct)}%`
+    : '相对误差 = --',
 )
 
 const precisionPass = computed(() => stats.value !== null && stats.value.relErrorPct <= 15)
@@ -237,10 +229,10 @@ defineExpose({
   snapshot: () => ({
     sucrose: sucrose.value ?? Number.NaN,
     k: k.value ?? Number.NaN,
-    runs: [
-      { ...run1 },
-      { ...run2 },
-    ] as [{ mass: number; v1: number }, { mass: number; v1: number }],
+    runs: [{ ...run1 }, { ...run2 }] as [
+      { mass: number; v1: number },
+      { mass: number; v1: number },
+    ],
     calc: [
       {
         V: res1.value?.V ?? Number.NaN,
@@ -256,7 +248,10 @@ defineExpose({
         f: res2.value?.f ?? Number.NaN,
         R: res2.value?.R ?? Number.NaN,
       },
-    ] as [{ V: number; m1: number; G1: number; f: number; R: number }, { V: number; m1: number; G1: number; f: number; R: number }],
+    ] as [
+      { V: number; m1: number; G1: number; f: number; R: number },
+      { V: number; m1: number; G1: number; f: number; R: number },
+    ],
     avg: stats.value?.avg ?? Number.NaN,
     relErrorPct: stats.value?.relErrorPct ?? Number.NaN,
   }),
@@ -286,7 +281,9 @@ defineExpose({
         <t-tag v-else-if="hasAuto" theme="warning" size="small" variant="light" class="auto-tag">
           手动输入
         </t-tag>
-        <span v-if="hasAuto && sucroseManual" class="auto-resume" @click="resumeAutoSucrose">恢复自动</span>
+        <span v-if="hasAuto && sucroseManual" class="auto-resume" @click="resumeAutoSucrose"
+          >恢复自动</span
+        >
       </div>
       <LabInput
         :model-value="sucrose"
@@ -296,31 +293,74 @@ defineExpose({
         :rule="ruleSucrose"
         @update:model-value="onSucroseInput"
       />
-      <LabInput v-model="k" label="费林试剂校正系数 K" placeholder="默认 42.1/40≈1.0525" :rule="ruleK" />
+      <LabInput
+        v-model="k"
+        label="费林试剂校正系数 K"
+        placeholder="默认 42.1/40≈1.0525"
+        :rule="ruleK"
+      />
 
       <div class="group-label">平行样 1</div>
-      <LabInput v-model="run1.mass" label="称样质量 m₁" suffix="g" placeholder="如 26.0002" :rule="ruleRedMass" />
-      <LabInput v-model="run1.v1" label="滴定体积 V₁" suffix="mL" placeholder="如 20.3" :rule="ruleVolume" />
+      <LabInput
+        v-model="run1.mass"
+        label="称样质量 m₁"
+        suffix="g"
+        placeholder="如 26.0002"
+        :rule="ruleRedMass"
+      />
+      <LabInput
+        v-model="run1.v1"
+        label="滴定体积 V₁"
+        suffix="mL"
+        placeholder="如 20.3"
+        :rule="ruleVolume"
+      />
 
       <div class="group-label">
         平行样 2
-        <t-tag theme="primary" size="small" variant="light" class="auto-tag">由平行样 1 自动生成</t-tag>
+        <t-tag theme="primary" size="small" variant="light" class="auto-tag"
+          >由平行样 1 自动生成</t-tag
+        >
         <span class="regen" @click="genRun2">重新生成</span>
       </div>
-      <LabInput v-model="run2.mass" label="称样质量 m₂" suffix="g" placeholder="填写平行样 1 后自动生成" :rule="ruleRedMass" readonly />
-      <LabInput v-model="run2.v1" label="滴定体积 V₂" suffix="mL" placeholder="自动生成" :rule="ruleVolume" readonly />
+      <LabInput
+        v-model="run2.mass"
+        label="称样质量 m₂"
+        suffix="g"
+        placeholder="填写平行样 1 后自动生成"
+        :rule="ruleRedMass"
+        readonly
+      />
+      <LabInput
+        v-model="run2.v1"
+        label="滴定体积 V₂"
+        suffix="mL"
+        placeholder="自动生成"
+        :rule="ruleVolume"
+        readonly
+      />
     </t-cell-group>
 
     <!-- 公式与结果 -->
     <div class="formula-card">
       <div class="formula-header">
         计算公式与结果
-        <span class="formula-header-note">m₁：100mL配制糖液含样品质量；G₁：滴定耗用配制糖液中含蔗糖量；f：由G₁查表2插值</span>
+        <span class="formula-header-note"
+          >m₁：100mL配制糖液含样品质量；G₁：滴定耗用配制糖液中含蔗糖量；f：由G₁查表2插值</span
+        >
       </div>
-      <div class="formula-item"><div class="formula-text">{{ v1Line }}</div></div>
-      <div class="formula-item"><div class="formula-text">{{ v2Line }}</div></div>
-      <div class="formula-item"><div class="formula-text">{{ m1Line }}</div></div>
-      <div class="formula-item"><div class="formula-text">{{ m2Line }}</div></div>
+      <div class="formula-item">
+        <div class="formula-text">{{ v1Line }}</div>
+      </div>
+      <div class="formula-item">
+        <div class="formula-text">{{ v2Line }}</div>
+      </div>
+      <div class="formula-item">
+        <div class="formula-text">{{ m1Line }}</div>
+      </div>
+      <div class="formula-item">
+        <div class="formula-text">{{ m2Line }}</div>
+      </div>
       <div class="formula-item">
         <div class="formula-text">{{ g1Line }}</div>
         <div class="formula-sub">{{ f1Line }}</div>
@@ -335,9 +375,15 @@ defineExpose({
           G₂ 超出表2范围（0~20g），f 取端点值，请核对数据
         </div>
       </div>
-      <div class="formula-item"><div class="formula-text">{{ r1Line }}</div></div>
-      <div class="formula-item"><div class="formula-text">{{ r2Line }}</div></div>
-      <div class="formula-item"><div class="formula-text">{{ avgLine }}</div></div>
+      <div class="formula-item">
+        <div class="formula-text">{{ r1Line }}</div>
+      </div>
+      <div class="formula-item">
+        <div class="formula-text">{{ r2Line }}</div>
+      </div>
+      <div class="formula-item">
+        <div class="formula-text">{{ avgLine }}</div>
+      </div>
       <div class="formula-item result-line">
         <div class="formula-text">
           {{ errLine }}

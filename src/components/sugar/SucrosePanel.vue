@@ -57,10 +57,7 @@ function genRun2() {
     { mass: run1.mass, directP: run1.directP, invertP: run1.invertP },
     { loss: shared.loss, temp: shared.temp },
   )
-  Object.assign(
-    run2,
-    g ?? { mass: null, directP: null, invertP: null },
-  )
+  Object.assign(run2, g ?? { mass: null, directP: null, invertP: null })
 }
 
 /* 平行样 1 / 共享变量变化时自动生成平行样 2（结果误差 < 0.05%） */
@@ -153,7 +150,9 @@ const avgLine = computed(() =>
 )
 
 const errLine = computed(() =>
-  stats.value ? `相对误差 = |S₁ − S₂| / S̄ × 100 = ${fmt(stats.value.relErrorPct)}%` : '相对误差 = --',
+  stats.value
+    ? `相对误差 = |S₁ − S₂| / S̄ × 100 = ${fmt(stats.value.relErrorPct)}%`
+    : '相对误差 = --',
 )
 
 const precisionPass = computed(() => stats.value !== null && stats.value.relErrorPct <= 0.05)
@@ -187,10 +186,10 @@ defineExpose({
   snapshot: () => ({
     loss: shared.loss ?? Number.NaN,
     temp: shared.temp ?? Number.NaN,
-    runs: [
-      { ...run1 },
-      { ...run2 },
-    ] as [{ mass: number; directP: number; invertP: number }, { mass: number; directP: number; invertP: number }],
+    runs: [{ ...run1 }, { ...run2 }] as [
+      { mass: number; directP: number; invertP: number },
+      { mass: number; directP: number; invertP: number },
+    ],
     G: res1.value?.G ?? Number.NaN,
     S1: res1.value?.S ?? Number.NaN,
     S2: res2.value?.S ?? Number.NaN,
@@ -210,22 +209,75 @@ defineExpose({
 
     <t-cell-group bordered>
       <div class="group-label">共享变量</div>
-      <LabInput v-model="shared.loss" label="干燥失重 Q" suffix="g/100g" placeholder="如 1.6" :rule="ruleLoss" />
-      <LabInput v-model="shared.temp" label="糖液温度 t" suffix="℃" placeholder="如 20.1" :rule="ruleTemp" />
+      <LabInput
+        v-model="shared.loss"
+        label="干燥失重 Q"
+        suffix="g/100g"
+        placeholder="如 1.6"
+        :rule="ruleLoss"
+      />
+      <LabInput
+        v-model="shared.temp"
+        label="糖液温度 t"
+        suffix="℃"
+        placeholder="如 20.1"
+        :rule="ruleTemp"
+      />
 
       <div class="group-label">平行样 1</div>
-      <LabInput v-model="run1.mass" label="称样质量 m₁" suffix="g" placeholder="如 65.0002" :rule="ruleSucMass" />
-      <LabInput v-model="run1.directP" label="直接旋光读数 P₁" suffix="°Z" placeholder="如 46.54" :rule="rulePolar" />
-      <LabInput v-model="run1.invertP" label="转化旋光读数 P₁′" suffix="°Z" placeholder="如 -15.63" :rule="rulePolar" />
+      <LabInput
+        v-model="run1.mass"
+        label="称样质量 m₁"
+        suffix="g"
+        placeholder="如 65.0002"
+        :rule="ruleSucMass"
+      />
+      <LabInput
+        v-model="run1.directP"
+        label="直接旋光读数 P₁"
+        suffix="°Z"
+        placeholder="如 46.54"
+        :rule="rulePolar"
+      />
+      <LabInput
+        v-model="run1.invertP"
+        label="转化旋光读数 P₁′"
+        suffix="°Z"
+        placeholder="如 -15.63"
+        :rule="rulePolar"
+      />
 
       <div class="group-label">
         平行样 2
-        <t-tag theme="primary" size="small" variant="light" class="auto-tag">由平行样 1 自动生成</t-tag>
+        <t-tag theme="primary" size="small" variant="light" class="auto-tag"
+          >由平行样 1 自动生成</t-tag
+        >
         <span class="regen" @click="genRun2">重新生成</span>
       </div>
-      <LabInput v-model="run2.mass" label="称样质量 m₂" suffix="g" placeholder="填写平行样 1 后自动生成" :rule="ruleSucMass" readonly />
-      <LabInput v-model="run2.directP" label="直接旋光读数 P₂" suffix="°Z" placeholder="自动生成" :rule="rulePolar" readonly />
-      <LabInput v-model="run2.invertP" label="转化旋光读数 P₂′" suffix="°Z" placeholder="自动生成" :rule="rulePolar" readonly />
+      <LabInput
+        v-model="run2.mass"
+        label="称样质量 m₂"
+        suffix="g"
+        placeholder="填写平行样 1 后自动生成"
+        :rule="ruleSucMass"
+        readonly
+      />
+      <LabInput
+        v-model="run2.directP"
+        label="直接旋光读数 P₂"
+        suffix="°Z"
+        placeholder="自动生成"
+        :rule="rulePolar"
+        readonly
+      />
+      <LabInput
+        v-model="run2.invertP"
+        label="转化旋光读数 P₂′"
+        suffix="°Z"
+        placeholder="自动生成"
+        :rule="rulePolar"
+        readonly
+      />
     </t-cell-group>
 
     <!-- 公式与结果 -->
@@ -234,10 +286,18 @@ defineExpose({
         计算公式与结果
         <span class="formula-header-note">G：每100mL转化糖液内干固物质量；S：蔗糖分</span>
       </div>
-      <div class="formula-item"><div class="formula-text">{{ gLine }}</div></div>
-      <div class="formula-item"><div class="formula-text">{{ s1Line }}</div></div>
-      <div class="formula-item"><div class="formula-text">{{ s2Line }}</div></div>
-      <div class="formula-item"><div class="formula-text">{{ avgLine }}</div></div>
+      <div class="formula-item">
+        <div class="formula-text">{{ gLine }}</div>
+      </div>
+      <div class="formula-item">
+        <div class="formula-text">{{ s1Line }}</div>
+      </div>
+      <div class="formula-item">
+        <div class="formula-text">{{ s2Line }}</div>
+      </div>
+      <div class="formula-item">
+        <div class="formula-text">{{ avgLine }}</div>
+      </div>
       <div class="formula-item result-line">
         <div class="formula-text">
           {{ errLine }}
